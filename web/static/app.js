@@ -191,6 +191,33 @@
     localStorage.setItem(COLUMNS_LS_KEY, JSON.stringify(ids));
   }
 
+  const SORT_LS_KEY = "tableSort";
+  const VALID_SORT_KEYS = new Set(COLUMNS.map((c) => c.sort));
+
+  function loadSort() {
+    try {
+      const raw = localStorage.getItem(SORT_LS_KEY);
+      if (!raw) return { sortKey: "ip", sortDir: 1 };
+      const parsed = JSON.parse(raw);
+      const key = parsed && typeof parsed.key === "string" ? parsed.key : "ip";
+      const dir = parsed && Number(parsed.dir) === -1 ? -1 : 1;
+      return {
+        sortKey: VALID_SORT_KEYS.has(key) ? key : "ip",
+        sortDir: dir,
+      };
+    } catch {
+      return { sortKey: "ip", sortDir: 1 };
+    }
+  }
+
+  function saveSort() {
+    localStorage.setItem(
+      SORT_LS_KEY,
+      JSON.stringify({ key: state.sortKey, dir: state.sortDir }),
+    );
+  }
+
+  const savedSort = loadSort();
   const state = {
     miners: [],
     meta: null,
@@ -198,8 +225,8 @@
     detail: null,
     history: [],
     hiddenSeries: new Set(),
-    sortKey: "ip",
-    sortDir: 1,
+    sortKey: savedSort.sortKey,
+    sortDir: savedSort.sortDir,
     visibleColumns: loadVisibleColumns(),
     filtersWidth: loadFiltersWidth(),
     refreshSec: Number(localStorage.getItem("refreshSec") || 30),
@@ -635,6 +662,7 @@
     if (!stillSortable) {
       state.sortKey = "ip";
       state.sortDir = 1;
+      saveSort();
     }
     renderColumnsPanel();
     renderTable();
@@ -1100,6 +1128,7 @@
         ]);
         state.sortDir = texty.has(key) ? 1 : -1;
       }
+      saveSort();
       renderTable();
     });
 
