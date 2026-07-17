@@ -37,34 +37,120 @@
   const FILTERS_WIDTH_DEFAULT = 280;
   const FILTERS_WIDTH_MIN = 180;
   const FILTERS_WIDTH_MAX = 640;
+  const FILTERS_RESIZER_PX = 10;
+  const FILTERS_SECTIONS_LS_KEY = "filterSectionsCollapsed";
+  // Right column needs room for the chart/table; keep at least this much.
+  const FILTERS_RIGHT_MIN = 320;
 
   function defaultColumnIds() {
     return COLUMNS.filter((c) => c.defaultOn || c.locked).map((c) => c.id);
   }
 
+  function maxFiltersWidthForViewport() {
+    // Prefer live grid width once the DOM is ready; fall back to viewport.
+    const grid = document.getElementById("dash-grid");
+    let avail = 0;
+    if (grid) {
+      avail = grid.clientWidth || grid.getBoundingClientRect().width || 0;
+    }
+    if (!avail) {
+      avail = Math.max(0, (window.innerWidth || 1200) - 32);
+    }
+    // Leave resizer + a usable right column so we never overflow horizontally.
+    return Math.max(
+      FILTERS_WIDTH_MIN,
+      Math.min(FILTERS_WIDTH_MAX, Math.floor(avail - FILTERS_RESIZER_PX - FILTERS_RIGHT_MIN)),
+    );
+  }
+
   function clampFiltersWidth(px) {
     const n = Math.round(Number(px));
     if (!Number.isFinite(n)) return FILTERS_WIDTH_DEFAULT;
-    return Math.min(FILTERS_WIDTH_MAX, Math.max(FILTERS_WIDTH_MIN, n));
+    const max = maxFiltersWidthForViewport();
+    return Math.min(max, Math.max(FILTERS_WIDTH_MIN, n));
   }
 
   function loadFiltersWidth() {
     const raw = parseInt(localStorage.getItem(FILTERS_WIDTH_LS_KEY), 10);
-    if (Number.isFinite(raw)) return clampFiltersWidth(raw);
-    return FILTERS_WIDTH_DEFAULT;
+    // Soft clamp only (min/max constants) at load time; viewport clamp happens on apply.
+    if (!Number.isFinite(raw)) return FILTERS_WIDTH_DEFAULT;
+    return Math.min(FILTERS_WIDTH_MAX, Math.max(FILTERS_WIDTH_MIN, Math.round(raw)));
   }
 
   function applyFiltersWidth(px, { save = true } = {}) {
     const w = clampFiltersWidth(px);
     document.documentElement.style.setProperty("--filters-width", w + "px");
-    if (els.filtersResizer) {
-      els.filtersResizer.setAttribute("aria-valuenow", String(w));
-      els.filtersResizer.setAttribute("aria-valuemin", String(FILTERS_WIDTH_MIN));
-      els.filtersResizer.setAttribute("aria-valuemax", String(FILTERS_WIDTH_MAX));
+    const handle = document.getElementById("filters-resizer");
+    if (handle) {
+      handle.setAttribute("aria-valuenow", String(w));
+      handle.setAttribute("aria-valuemin", String(FILTERS_WIDTH_MIN));
+      handle.setAttribute("aria-valuemax", String(maxFiltersWidthForViewport()));
     }
     if (save) localStorage.setItem(FILTERS_WIDTH_LS_KEY, String(w));
     state.filtersWidth = w;
     return w;
+  }
+
+  function loadFilterSectionsCollapsed() {
+    try {
+      const raw = localStorage.getItem(FILTERS_SECTIONS_LS_KEY);
+      if (!raw) return {};
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function saveFilterSectionsCollapsed(map) {
+    localStorage.setItem(FILTERS_SECTIONS_LS_KEY, JSON.stringify(map));
+  }
+
+  function setFilterSectionCollapsed(section, collapsed, { save = true } = {}) {
+    if (!section) return;
+    const id = section.dataset.filterSection;
+    section.classList.toggle("collapsed", collapsed);
+    const btn = section.querySelector(".filter-section-toggle");
+    if (btn) btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    if (save && id) {
+      const map = loadFilterSectionsCollapsed();
+      if (collapsed) map[id] = true;
+      else delete map[id];
+      saveFilterSectionsCollapsed(map);
+    }
+  }
+
+  function bindFilterSections() {
+    const sections = document.querySelectorAll(".filter-section[data-filter-section]");
+    const saved = loadFilterSectionsCollapsed();
+    for (const section of sections) {
+      const id = section.dataset.filterSection;
+      if (saved[id]) setFilterSectionCollapsed(section, true, { save: false });
+      const btn = section.querySelector(".filter-section-toggle");
+      if (!btn) continue;
+      btn.addEventListener("click", () => {
+        const next = !section.classList.contains("collapsed");
+        setFilterSectionCollapsed(section, next, { save: true });
+      });
+    }
+  }
+
+  /** Mark sections that currently have active filter values (visual hint when collapsed). */
+  function updateFilterSectionActiveHints() {
+    const sections = document.querySelectorAll(".filter-section[data-filter-section]");
+    for (const section of sections) {
+      const inputs = section.querySelectorAll("input, select");
+      let active = false;
+      for (const el of inputs) {
+        if (el.tagName === "SELECT" && el.multiple) {
+          if (Array.from(el.selectedOptions).length) { active = true; break; }
+        } else if (String(el.value || "").trim() !== "") {
+          active = true;
+          break;
+        }
+      }
+      section.classList.toggle("has-active", active);
+    }
   }
 
   function loadVisibleColumns() {
@@ -432,6 +518,7 @@
     if (els.filterActiveBadge) {
       els.filterActiveBadge.hidden = !bits.length;
     }
+    updateFilterSectionActiveHints();
   }
 
   function cellHTML(col, m) {
@@ -979,6 +1066,8 @@
       setFiltersCollapsed(localStorage.getItem("filtersCollapsed") === "1");
     }
 
+    bindFilterSections();
+
     const filterInputs = [
       els.search, els.make, els.model, els.firmware, els.algo, els.mining, els.errors,
       els.hrMin, els.hrMax, els.tempMin, els.tempMax, els.vrMin, els.vrMax,
@@ -1062,20 +1151,26 @@
     applyFiltersWidth(state.filtersWidth, { save: false });
 
     let dragging = false;
+    let dragPointerId = null;
 
     const onMove = (clientX) => {
       if (!dragging) return;
-      const gridLeft = els.dashGrid.getBoundingClientRect().left;
-      // Width is distance from grid left edge to the drag handle.
-      applyFiltersWidth(clientX - gridLeft, { save: false });
-      drawChart();
+      // Measure from the left column's left edge so padding/gaps don't skew width.
+      const left = (els.colLeft || els.dashGrid).getBoundingClientRect().left;
+      applyFiltersWidth(clientX - left, { save: false });
+      // Avoid thrashing the chart on every pixel; resize observer / end will redraw.
     };
 
-    const endDrag = () => {
+    const endDrag = (ev) => {
       if (!dragging) return;
+      if (ev && dragPointerId != null && ev.pointerId != null && ev.pointerId !== dragPointerId) {
+        return;
+      }
       dragging = false;
+      dragPointerId = null;
       els.dashGrid.classList.remove("resizing");
       document.body.style.cursor = "";
+      document.body.style.userSelect = "";
       applyFiltersWidth(state.filtersWidth, { save: true });
       drawChart();
     };
@@ -1084,20 +1179,32 @@
       // Only primary button / touch.
       if (ev.button != null && ev.button !== 0) return;
       dragging = true;
+      dragPointerId = ev.pointerId;
       els.dashGrid.classList.add("resizing");
       document.body.style.cursor = "col-resize";
-      handle.setPointerCapture?.(ev.pointerId);
+      document.body.style.userSelect = "none";
+      try {
+        handle.setPointerCapture(ev.pointerId);
+      } catch {
+        /* ignore */
+      }
       ev.preventDefault();
-    });
-
-    handle.addEventListener("pointermove", (ev) => {
-      if (!dragging) return;
       onMove(ev.clientX);
     });
 
+    // Listen on the handle (with capture) and document so drag keeps working
+    // even if the pointer briefly leaves the thin hit target.
+    const moveHandler = (ev) => {
+      if (!dragging) return;
+      if (dragPointerId != null && ev.pointerId != null && ev.pointerId !== dragPointerId) return;
+      onMove(ev.clientX);
+    };
+    handle.addEventListener("pointermove", moveHandler);
+    document.addEventListener("pointermove", moveHandler);
     handle.addEventListener("pointerup", endDrag);
     handle.addEventListener("pointercancel", endDrag);
-    handle.addEventListener("lostpointercapture", endDrag);
+    document.addEventListener("pointerup", endDrag);
+    document.addEventListener("pointercancel", endDrag);
 
     // Double-click restores default width.
     handle.addEventListener("dblclick", () => {
@@ -1112,7 +1219,7 @@
       if (ev.key === "ArrowLeft") next -= step;
       else if (ev.key === "ArrowRight") next += step;
       else if (ev.key === "Home") next = FILTERS_WIDTH_MIN;
-      else if (ev.key === "End") next = FILTERS_WIDTH_MAX;
+      else if (ev.key === "End") next = maxFiltersWidthForViewport();
       else return;
       ev.preventDefault();
       applyFiltersWidth(next, { save: true });

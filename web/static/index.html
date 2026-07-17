@@ -14,7 +14,7 @@
       }
       // Restore filters column width early to avoid layout flash.
       var w = parseInt(localStorage.getItem('filtersWidth'), 10);
-      if (w >= 180 && w <= 800) {
+      if (w >= 180 && w <= 640) {
         document.documentElement.style.setProperty('--filters-width', w + 'px');
       }
     })();
@@ -67,100 +67,162 @@
           </header>
 
           <div id="filters-body" class="collapse-body">
-            <div class="field">
-              <label for="f-search">Search</label>
-              <input id="f-search" type="search" placeholder="IP, hostname, model, serial…" autocomplete="off" />
-            </div>
-
-            <div class="field-row">
-              <div class="field">
-                <label for="f-make">Brand / make</label>
-                <select id="f-make" multiple size="4"></select>
-              </div>
-              <div class="field">
-                <label for="f-model">Model</label>
-                <select id="f-model" multiple size="4"></select>
+            <div class="filter-section" data-filter-section="search">
+              <button type="button" class="filter-section-toggle" aria-expanded="true">
+                <span class="collapse-chevron" aria-hidden="true">▾</span>
+                <span class="filter-section-title">Search</span>
+              </button>
+              <div class="filter-section-body">
+                <div class="field">
+                  <label for="f-search" class="sr-only">Search</label>
+                  <input id="f-search" type="search" placeholder="IP, hostname, model, serial…" autocomplete="off" />
+                </div>
               </div>
             </div>
 
-            <div class="field-row">
-              <div class="field">
-                <label for="f-firmware">Firmware</label>
-                <select id="f-firmware" multiple size="3"></select>
-              </div>
-              <div class="field">
-                <label for="f-algo">Algo</label>
-                <select id="f-algo" multiple size="3"></select>
-              </div>
-            </div>
-
-            <div class="field-row">
-              <div class="field">
-                <label for="f-mining">Mining</label>
-                <select id="f-mining">
-                  <option value="">Any</option>
-                  <option value="1">Mining</option>
-                  <option value="0">Not mining</option>
-                </select>
-              </div>
-              <div class="field">
-                <label for="f-errors">Status</label>
-                <select id="f-errors">
-                  <option value="">Any</option>
-                  <option value="ok">OK only</option>
-                  <option value="err">Errors only</option>
-                  <option value="msg">Has messages</option>
-                </select>
+            <div class="filter-section" data-filter-section="identity">
+              <button type="button" class="filter-section-toggle" aria-expanded="true">
+                <span class="collapse-chevron" aria-hidden="true">▾</span>
+                <span class="filter-section-title">Brand / model</span>
+              </button>
+              <div class="filter-section-body">
+                <div class="field-row">
+                  <div class="field">
+                    <label for="f-make">Brand / make</label>
+                    <select id="f-make" multiple size="4"></select>
+                  </div>
+                  <div class="field">
+                    <label for="f-model">Model</label>
+                    <select id="f-model" multiple size="4"></select>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <fieldset class="range-set">
-              <legend>Hashrate (TH/s)</legend>
-              <div class="field-row">
-                <input id="f-hr-min" type="number" step="any" placeholder="min" />
-                <input id="f-hr-max" type="number" step="any" placeholder="max" />
+            <div class="filter-section" data-filter-section="firmware">
+              <button type="button" class="filter-section-toggle" aria-expanded="true">
+                <span class="collapse-chevron" aria-hidden="true">▾</span>
+                <span class="filter-section-title">Firmware / algo</span>
+              </button>
+              <div class="filter-section-body">
+                <div class="field-row">
+                  <div class="field">
+                    <label for="f-firmware">Firmware</label>
+                    <select id="f-firmware" multiple size="3"></select>
+                  </div>
+                  <div class="field">
+                    <label for="f-algo">Algo</label>
+                    <select id="f-algo" multiple size="3"></select>
+                  </div>
+                </div>
               </div>
-            </fieldset>
+            </div>
 
-            <fieldset class="range-set">
-              <legend>ASIC temp max (°C)</legend>
-              <div class="field-row">
-                <input id="f-temp-min" type="number" step="any" placeholder="min" />
-                <input id="f-temp-max" type="number" step="any" placeholder="max" />
+            <div class="filter-section" data-filter-section="status">
+              <button type="button" class="filter-section-toggle" aria-expanded="true">
+                <span class="collapse-chevron" aria-hidden="true">▾</span>
+                <span class="filter-section-title">Mining / status</span>
+              </button>
+              <div class="filter-section-body">
+                <div class="field-row">
+                  <div class="field">
+                    <label for="f-mining">Mining</label>
+                    <select id="f-mining">
+                      <option value="">Any</option>
+                      <option value="1">Mining</option>
+                      <option value="0">Not mining</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="f-errors">Status</label>
+                    <select id="f-errors">
+                      <option value="">Any</option>
+                      <option value="ok">OK only</option>
+                      <option value="err">Errors only</option>
+                      <option value="msg">Has messages</option>
+                    </select>
+                  </div>
+                </div>
               </div>
-            </fieldset>
+            </div>
 
-            <fieldset class="range-set">
-              <legend>VR temp max (°C)</legend>
-              <div class="field-row">
-                <input id="f-vr-min" type="number" step="any" placeholder="min" />
-                <input id="f-vr-max" type="number" step="any" placeholder="max" />
+            <div class="filter-section" data-filter-section="hashrate">
+              <button type="button" class="filter-section-toggle" aria-expanded="true">
+                <span class="collapse-chevron" aria-hidden="true">▾</span>
+                <span class="filter-section-title">Hashrate (TH/s)</span>
+              </button>
+              <div class="filter-section-body">
+                <div class="field-row">
+                  <input id="f-hr-min" type="number" step="any" placeholder="min" aria-label="Hashrate min" />
+                  <input id="f-hr-max" type="number" step="any" placeholder="max" aria-label="Hashrate max" />
+                </div>
               </div>
-            </fieldset>
+            </div>
 
-            <fieldset class="range-set">
-              <legend>Power (W)</legend>
-              <div class="field-row">
-                <input id="f-w-min" type="number" step="any" placeholder="min" />
-                <input id="f-w-max" type="number" step="any" placeholder="max" />
+            <div class="filter-section" data-filter-section="asic-temp">
+              <button type="button" class="filter-section-toggle" aria-expanded="true">
+                <span class="collapse-chevron" aria-hidden="true">▾</span>
+                <span class="filter-section-title">ASIC temp max (°C)</span>
+              </button>
+              <div class="filter-section-body">
+                <div class="field-row">
+                  <input id="f-temp-min" type="number" step="any" placeholder="min" aria-label="ASIC temp min" />
+                  <input id="f-temp-max" type="number" step="any" placeholder="max" aria-label="ASIC temp max" />
+                </div>
               </div>
-            </fieldset>
+            </div>
 
-            <fieldset class="range-set">
-              <legend>Chips</legend>
-              <div class="field-row">
-                <input id="f-chips-min" type="number" step="1" placeholder="min" />
-                <input id="f-chips-max" type="number" step="1" placeholder="max" />
+            <div class="filter-section" data-filter-section="vr-temp">
+              <button type="button" class="filter-section-toggle" aria-expanded="true">
+                <span class="collapse-chevron" aria-hidden="true">▾</span>
+                <span class="filter-section-title">VR temp max (°C)</span>
+              </button>
+              <div class="filter-section-body">
+                <div class="field-row">
+                  <input id="f-vr-min" type="number" step="any" placeholder="min" aria-label="VR temp min" />
+                  <input id="f-vr-max" type="number" step="any" placeholder="max" aria-label="VR temp max" />
+                </div>
               </div>
-            </fieldset>
+            </div>
 
-            <fieldset class="range-set">
-              <legend>Efficiency (J/TH)</legend>
-              <div class="field-row">
-                <input id="f-eff-min" type="number" step="any" placeholder="min" />
-                <input id="f-eff-max" type="number" step="any" placeholder="max" />
+            <div class="filter-section" data-filter-section="power">
+              <button type="button" class="filter-section-toggle" aria-expanded="true">
+                <span class="collapse-chevron" aria-hidden="true">▾</span>
+                <span class="filter-section-title">Power (W)</span>
+              </button>
+              <div class="filter-section-body">
+                <div class="field-row">
+                  <input id="f-w-min" type="number" step="any" placeholder="min" aria-label="Power min" />
+                  <input id="f-w-max" type="number" step="any" placeholder="max" aria-label="Power max" />
+                </div>
               </div>
-            </fieldset>
+            </div>
+
+            <div class="filter-section" data-filter-section="chips">
+              <button type="button" class="filter-section-toggle" aria-expanded="true">
+                <span class="collapse-chevron" aria-hidden="true">▾</span>
+                <span class="filter-section-title">Chips</span>
+              </button>
+              <div class="filter-section-body">
+                <div class="field-row">
+                  <input id="f-chips-min" type="number" step="1" placeholder="min" aria-label="Chips min" />
+                  <input id="f-chips-max" type="number" step="1" placeholder="max" aria-label="Chips max" />
+                </div>
+              </div>
+            </div>
+
+            <div class="filter-section" data-filter-section="efficiency">
+              <button type="button" class="filter-section-toggle" aria-expanded="true">
+                <span class="collapse-chevron" aria-hidden="true">▾</span>
+                <span class="filter-section-title">Efficiency (J/TH)</span>
+              </button>
+              <div class="filter-section-body">
+                <div class="field-row">
+                  <input id="f-eff-min" type="number" step="any" placeholder="min" aria-label="Efficiency min" />
+                  <input id="f-eff-max" type="number" step="any" placeholder="max" aria-label="Efficiency max" />
+                </div>
+              </div>
+            </div>
 
             <p class="text-light filter-count"><span id="filter-count">0</span> shown</p>
           </div>
