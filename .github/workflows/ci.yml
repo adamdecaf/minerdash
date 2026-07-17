@@ -42,8 +42,10 @@ jobs:
         run: |
           go mod download github.com/adamdecaf/asic-rs-go
           MODDIR="$(go list -m -f '{{.Dir}}' github.com/adamdecaf/asic-rs-go)"
-          # Module cache is read-only; build from a writable copy.
+          # Module cache is read-only; copy and make writable for cargo.
+          rm -rf /tmp/asic-rs-go
           cp -a "$MODDIR" /tmp/asic-rs-go
+          chmod -R u+w /tmp/asic-rs-go
           echo "ASIC_RS_GO=/tmp/asic-rs-go" >> "$GITHUB_ENV"
           echo "CGO_CFLAGS=-I/tmp/asic-rs-go/asicrs/include" >> "$GITHUB_ENV"
           echo "CGO_LDFLAGS=-L/tmp/asic-rs-go/asicrs/lib -lasic_rs_ffi -lm -ldl -lpthread" >> "$GITHUB_ENV"

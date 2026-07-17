@@ -12,10 +12,11 @@ WORKDIR /src
 COPY go.mod go.sum ./
 ENV GOTOOLCHAIN=auto
 RUN go mod download github.com/adamdecaf/asic-rs-go
-# Module cache is read-only; copy to a writable tree for cargo + cgo installs.
+# Module cache is read-only; copy and chmod so cargo can write target/.
 RUN MODDIR="$(go list -m -f '{{.Dir}}' github.com/adamdecaf/asic-rs-go)" \
  && mkdir -p /src/asic-rs-go \
- && cp -a "$MODDIR"/. /src/asic-rs-go/
+ && cp -a "$MODDIR"/. /src/asic-rs-go/ \
+ && chmod -R u+w /src/asic-rs-go
 
 # -----------------------------------------------------------------------------
 # Stage 2: build asic-rs FFI (Rust) for linux
