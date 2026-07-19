@@ -63,8 +63,9 @@ RUN go mod download \
 # Stage 4: runtime
 # -----------------------------------------------------------------------------
 FROM debian:bookworm-slim AS runtime
+# util-linux provides setpriv (drop privileges after fixing data dir ownership).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates \
+      ca-certificates util-linux \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --home /app --shell /usr/sbin/nologin hasherdash \
     && mkdir -p /app/data \
@@ -73,12 +74,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=ffi /out/lib/libasic_rs_ffi.so /usr/local/lib/
 RUN ldconfig
 COPY --from=build /out/hasherdash /usr/local/bin/hasherdash
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod 755 /entrypoint.sh
 
-USER hasherdash
+# Start as root so the entrypoint can chown bind-mounted ./data, then drop to hasherdash.
 WORKDIR /app
 ENV HTTP_ADDR=:8080
 ENV POLL_INTERVAL=30s
 ENV SQLITE_PATH=/app/data/hasherdash.db
+ENV HASHERDASH_DATA_DIR=/app/data
 EXPOSE 8080
 VOLUME ["/app/data"]
-ENTRYPOINT ["/usr/local/bin/hasherdash"]
+ENTRYPOINT ["/entrypoint.sh"]

@@ -32,8 +32,11 @@ func openMetricsDB(path string) (*sql.DB, error) {
 	if path != ":memory:" {
 		if dir := filepath.Dir(path); dir != "" && dir != "." {
 			if err := os.MkdirAll(dir, 0o755); err != nil {
-				return nil, fmt.Errorf("create sqlite dir %s: %w", dir, err)
+				return nil, fmt.Errorf("create sqlite dir %s: %w (check mount permissions)", dir, err)
 			}
+		}
+		if err := checkSQLiteWritable(path); err != nil {
+			return nil, err
 		}
 	}
 
@@ -55,7 +58,7 @@ func openMetricsDB(path string) (*sql.DB, error) {
 
 	if _, err := db.Exec(`PRAGMA journal_mode=WAL`); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("sqlite wal: %w", err)
+		return nil, fmt.Errorf("sqlite wal on %s: %w (directory must be writable by the process for .db/-wal/-shm)", path, err)
 	}
 	if _, err := db.Exec(`PRAGMA synchronous=NORMAL`); err != nil {
 		_ = db.Close()
@@ -71,6 +74,23 @@ func openMetricsDB(path string) (*sql.DB, error) {
 		return nil, err
 	}
 	return db, nil
+}
+
+// checkSQLiteWritable ensures the DB directory is writable (WAL needs it).
+func checkSQLiteWritable(path string) error {
+	dir := filepath.Dir(path)
+	if dir == "" || dir == "." {
+		dir = "."
+	}
+	// Probe create+remove a temp file the same way SQLite needs for -wal/-shm.
+	probe := filepath.Join(dir, ".hasherdash-write-test")
+	f, err := os.OpenFile(probe, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return fmt.Errorf("sqlite dir %s is not writable: %w (on Linux bind mounts: chown 10001:10001 the host data dir, or rebuild the image with the entrypoint that fixes ownership)", dir, err)
+	}
+	_ = f.Close()
+	_ = os.Remove(probe)
+	return nil
 }
 
 func migrateMetrics(db *sql.DB) error {

@@ -86,7 +86,9 @@ Successful polls append samples (hashrate, temps, power, efficiency, chips, …)
 
 **Docker data mount:** bind a host directory to `/app/data` and leave `SQLITE_PATH=/app/data/hasherdash.db`. With Compose this is `./data` → host file `./data/hasherdash.db`.
 
-On Linux, the container runs as uid `10001`. If SQLite cannot create the DB, fix ownership once:
+The image entrypoint runs briefly as root to `chown` the bind-mounted data dir to uid `10001`, then drops privileges. Rebuild the image after pulling so that entrypoint is present (`docker compose up -d --build`).
+
+If you still hit permission errors on an old image:
 
 ```bash
 mkdir -p data && sudo chown -R 10001:10001 data
