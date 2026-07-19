@@ -17,25 +17,31 @@ type Source interface {
 	Name() string
 }
 
+// Forgetter can drop discovered IPs that the store has pruned.
+type Forgetter interface {
+	Forget(ids []string)
+}
+
 // Runner periodically polls a Source into a Store.
 type Runner struct {
-	src    Source
-	store  *store.Store
-	every  time.Duration
-	logger *log.Logger
+	src      Source
+	store    *store.Store
+	every    time.Duration
+	minerTTL time.Duration
+	logger   *log.Logger
 }
 
 // NewRunner creates a poll loop.
-func NewRunner(src Source, st *store.Store, every time.Duration, logger *log.Logger) *Runner {
+func NewRunner(src Source, st *store.Store, every, minerTTL time.Duration, logger *log.Logger) *Runner {
 	if logger == nil {
 		logger = log.Default()
 	}
-	return &Runner{src: src, store: st, every: every, logger: logger}
+	return &Runner{src: src, store: st, every: every, minerTTL: minerTTL, logger: logger}
 }
 
 // Run blocks until ctx is cancelled.
 func (r *Runner) Run(ctx context.Context) {
-	r.logger.Printf("poller: source=%s interval=%s", r.src.Name(), r.every)
+	r.logger.Printf("poller: source=%s interval=%s miner_ttl=%s", r.src.Name(), r.every, ttlLabel(r.minerTTL))
 	r.tick(ctx)
 
 	t := time.NewTicker(r.every)
@@ -60,11 +66,31 @@ func (r *Runner) tick(ctx context.Context) {
 		for _, d := range details {
 			r.store.Upsert(d)
 		}
+		r.prune()
 		return
 	}
 	for _, d := range details {
 		r.store.Upsert(d)
 	}
 	r.store.MarkPoll(nil)
+	r.prune()
 	r.logger.Printf("poller: updated %d miners in %s", len(details), time.Since(start).Round(time.Millisecond))
+}
+
+func (r *Runner) prune() {
+	removed := r.store.Prune(r.minerTTL)
+	if len(removed) == 0 {
+		return
+	}
+	r.logger.Printf("poller: pruned %d miners past ttl", len(removed))
+	if f, ok := r.src.(Forgetter); ok {
+		f.Forget(removed)
+	}
+}
+
+func ttlLabel(d time.Duration) string {
+	if d <= 0 {
+		return "forever"
+	}
+	return d.String()
 }

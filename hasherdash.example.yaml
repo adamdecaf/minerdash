@@ -2,11 +2,19 @@
 # Copy to hasherdash.yaml (or set CONFIG_FILE / -config) and edit.
 #
 # Discovery: use any combination of subnets (CIDR), ranges, and static IPs.
-# Subnets/ranges are scanned once; discovered miners are then polled each interval.
+# Subnets/ranges are re-scanned every rescan_interval; known miners stay until
+# miner_ttl after last successful poll.
 
 http_addr: ":8080"
 poll_interval: 30s
-history_points: 240
+# Full subnet/range discovery cadence (0 = scan once at startup only).
+rescan_interval: 30m
+# Drop miners that have not been seen successfully for this long.
+miner_ttl: 168h
+# Keep metric samples for charting (UI default window is 24h; up to 7d selectable).
+history_retention: 168h
+# Optional hard cap on ring size; auto-sized from history_retention / poll_interval if omitted.
+# history_points: 20162
 scan_timeout_sec: 8
 scan_concurrent: 200
 

@@ -129,3 +129,67 @@ func TestHasDiscoveryTargets(t *testing.T) {
 		t.Fatal("expected targets")
 	}
 }
+
+func TestDefaultsRescanAndRetention(t *testing.T) {
+	_ = os.Unsetenv("CONFIG_FILE")
+	_ = os.Unsetenv("RESCAN_INTERVAL")
+	_ = os.Unsetenv("MINER_TTL")
+	_ = os.Unsetenv("HISTORY_RETENTION")
+	_ = os.Unsetenv("HISTORY_POINTS")
+	_ = os.Unsetenv("MINER_SUBNET")
+	_ = os.Unsetenv("MINER_IPS")
+	_ = os.Unsetenv("MINER_SUBNETS")
+	_ = os.Unsetenv("MINER_RANGES")
+
+	// Work from a temp dir so auto-discovery finds no config file.
+	t.Chdir(t.TempDir())
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RescanInterval != 30*time.Minute {
+		t.Fatalf("rescan %v", cfg.RescanInterval)
+	}
+	if cfg.MinerTTL != 7*24*time.Hour {
+		t.Fatalf("ttl %v", cfg.MinerTTL)
+	}
+	if cfg.HistoryRetention != 7*24*time.Hour {
+		t.Fatalf("retention %v", cfg.HistoryRetention)
+	}
+	// history points sized for 7d @ 30s
+	wantPts := int((7*24*time.Hour)/cfg.PollInterval) + 2
+	if cfg.HistoryPoints != wantPts {
+		t.Fatalf("history_points %d want %d", cfg.HistoryPoints, wantPts)
+	}
+}
+
+func TestLoadRescanAndTTL(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hasherdash.yaml")
+	content := `
+rescan_interval: 15m
+miner_ttl: 48h
+history_retention: 72h
+poll_interval: 60s
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RescanInterval != 15*time.Minute {
+		t.Fatalf("rescan %v", cfg.RescanInterval)
+	}
+	if cfg.MinerTTL != 48*time.Hour {
+		t.Fatalf("ttl %v", cfg.MinerTTL)
+	}
+	if cfg.HistoryRetention != 72*time.Hour {
+		t.Fatalf("retention %v", cfg.HistoryRetention)
+	}
+	wantPts := int(72*time.Hour/cfg.PollInterval) + 2
+	if cfg.HistoryPoints < wantPts {
+		t.Fatalf("points %d want >= %d", cfg.HistoryPoints, wantPts)
+	}
+}

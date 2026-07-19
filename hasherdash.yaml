@@ -2,11 +2,14 @@
 # Copy to hasherdash.yaml (or set CONFIG_FILE / -config) and edit.
 #
 # Discovery: use any combination of subnets (CIDR), ranges, and static IPs.
-# Subnets/ranges are scanned once; discovered miners are then polled each interval.
+# Subnets/ranges are re-scanned every rescan_interval; known miners stay until
+# miner_ttl after last successful poll.
 
 http_addr: ":8080"
 poll_interval: 30s
-history_points: 240
+rescan_interval: 30m
+miner_ttl: 168h
+history_retention: 168h
 scan_timeout_sec: 8
 scan_concurrent: 200
 

@@ -33,7 +33,7 @@ func main() {
 
 	st := store.New(cfg.HistoryPoints, int(cfg.PollInterval.Seconds()))
 	src := poller.NewSource(cfg)
-	runner := poller.NewRunner(src, st, cfg.PollInterval, logger)
+	runner := poller.NewRunner(src, st, cfg.PollInterval, cfg.MinerTTL, logger)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()

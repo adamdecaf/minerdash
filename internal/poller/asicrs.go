@@ -16,20 +16,23 @@ import (
 
 // AsicSource discovers and polls real miners via asic-rs-go.
 type AsicSource struct {
-	cfg     config.Config
-	ips     []string
-	subnets []string // remaining CIDRs to scan (cleared after first success)
-	ranges  []string // remaining range strings to scan
-	mu      sync.Mutex
+	cfg        config.Config
+	staticIPs  []string          // configured fixed IPs (always polled)
+	discovered map[string]struct{} // IPs found via subnet/range scan
+	subnets    []string          // CIDRs to re-scan periodically
+	ranges     []string          // range strings to re-scan periodically
+	lastScan   time.Time         // zero forces a scan on the first collect
+	mu         sync.Mutex
 }
 
 // NewAsicSource builds a source from configured IPs / subnets / ranges.
 func NewAsicSource(cfg config.Config) *AsicSource {
 	return &AsicSource{
-		cfg:     cfg,
-		ips:     append([]string(nil), cfg.MinerIPs...),
-		subnets: append([]string(nil), cfg.MinerSubnets...),
-		ranges:  append([]string(nil), cfg.MinerRanges...),
+		cfg:        cfg,
+		staticIPs:  append([]string(nil), cfg.MinerIPs...),
+		discovered: make(map[string]struct{}),
+		subnets:    append([]string(nil), cfg.MinerSubnets...),
+		ranges:     append([]string(nil), cfg.MinerRanges...),
 	}
 }
 
@@ -105,9 +108,39 @@ func (a *AsicSource) Collect(ctx context.Context) ([]models.Detail, error) {
 	return out, nil
 }
 
+// Forget drops discovered IPs (not static config) so pruned miners stop being polled
+// until a future full scan finds them again.
+func (a *AsicSource) Forget(ids []string) {
+	if len(ids) == 0 {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	static := map[string]struct{}{}
+	for _, ip := range a.staticIPs {
+		static[ip] = struct{}{}
+	}
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := static[id]; ok {
+			continue
+		}
+		delete(a.discovered, id)
+	}
+}
+
 func (a *AsicSource) resolveIPs() ([]string, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+
+	var scanErr error
+	if a.shouldScanLocked() {
+		scanErr = a.scanLocked()
+		a.lastScan = time.Now()
+	}
 
 	seen := map[string]struct{}{}
 	var ips []string
@@ -122,11 +155,35 @@ func (a *AsicSource) resolveIPs() ([]string, error) {
 		seen[ip] = struct{}{}
 		ips = append(ips, ip)
 	}
-	for _, ip := range a.ips {
+	for _, ip := range a.staticIPs {
+		add(ip)
+	}
+	for ip := range a.discovered {
 		add(ip)
 	}
 
-	// One-shot discovery: scan each configured subnet/range once, then cache IPs.
+	if len(ips) == 0 && scanErr != nil {
+		return nil, scanErr
+	}
+	return ips, nil
+}
+
+func (a *AsicSource) shouldScanLocked() bool {
+	if len(a.subnets) == 0 && len(a.ranges) == 0 {
+		return false
+	}
+	// Always scan on the first collect.
+	if a.lastScan.IsZero() {
+		return true
+	}
+	// RescanInterval <= 0: startup scan only.
+	if a.cfg.RescanInterval <= 0 {
+		return false
+	}
+	return time.Since(a.lastScan) >= a.cfg.RescanInterval
+}
+
+func (a *AsicSource) scanLocked() error {
 	var scanErr error
 	for _, subnet := range a.subnets {
 		f, err := asicrs.NewFactoryFromSubnet(subnet)
@@ -146,8 +203,10 @@ func (a *AsicSource) resolveIPs() ([]string, error) {
 		}
 		for _, m := range miners {
 			if ip, err := m.IP(); err == nil {
-				add(ip)
-				a.ips = append(a.ips, ip)
+				ip = strings.TrimSpace(ip)
+				if ip != "" {
+					a.discovered[ip] = struct{}{}
+				}
 			}
 			m.Close()
 		}
@@ -171,23 +230,18 @@ func (a *AsicSource) resolveIPs() ([]string, error) {
 		}
 		for _, m := range miners {
 			if ip, err := m.IP(); err == nil {
-				add(ip)
-				a.ips = append(a.ips, ip)
+				ip = strings.TrimSpace(ip)
+				if ip != "" {
+					a.discovered[ip] = struct{}{}
+				}
 			}
 			m.Close()
 		}
 		f.Close()
 	}
-	// Do not re-scan subnets/ranges every poll — stick to discovered + static IPs.
-	if len(a.subnets) > 0 || len(a.ranges) > 0 {
-		a.subnets = nil
-		a.ranges = nil
-	}
-
-	if len(ips) == 0 && scanErr != nil {
-		return nil, scanErr
-	}
-	return ips, nil
+	log.Printf("asic-rs: discovery complete — %d static + %d discovered IPs",
+		len(a.staticIPs), len(a.discovered))
+	return scanErr
 }
 
 func configureFactory(f *asicrs.Factory, cfg config.Config) {

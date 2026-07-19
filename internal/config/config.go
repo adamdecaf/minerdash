@@ -17,11 +17,17 @@ type Config struct {
 	HTTPAddr       string
 	PollInterval   time.Duration
 	HistoryPoints  int
+	HistoryRetention time.Duration // how long metric samples are kept
 	MinerIPs       []string
 	MinerSubnets   []string // CIDR ranges, e.g. 192.168.1.0/24
 	MinerRanges    []string // asic-rs range strings, e.g. 192.168.1.1-50
 	ScanTimeoutSec int
 	Concurrent     int
+	// RescanInterval is how often to re-scan subnets/ranges for new miners.
+	// Zero or negative disables periodic rescans (startup scan still runs).
+	RescanInterval time.Duration
+	// MinerTTL is how long to keep a miner after last successful sighting.
+	MinerTTL time.Duration
 
 	// ConfigPath is the file that was loaded, if any (for logging).
 	ConfigPath string
@@ -29,11 +35,14 @@ type Config struct {
 
 // fileConfig is the on-disk representation (YAML or JSON).
 type fileConfig struct {
-	HTTPAddr       string `yaml:"http_addr" json:"http_addr"`
-	PollInterval   string `yaml:"poll_interval" json:"poll_interval"`
-	HistoryPoints  *int   `yaml:"history_points" json:"history_points"`
-	ScanTimeoutSec *int   `yaml:"scan_timeout_sec" json:"scan_timeout_sec"`
-	Concurrent     *int   `yaml:"scan_concurrent" json:"scan_concurrent"`
+	HTTPAddr           string `yaml:"http_addr" json:"http_addr"`
+	PollInterval       string `yaml:"poll_interval" json:"poll_interval"`
+	HistoryPoints      *int   `yaml:"history_points" json:"history_points"`
+	HistoryRetention   string `yaml:"history_retention" json:"history_retention"`
+	ScanTimeoutSec     *int   `yaml:"scan_timeout_sec" json:"scan_timeout_sec"`
+	Concurrent         *int   `yaml:"scan_concurrent" json:"scan_concurrent"`
+	RescanInterval     string `yaml:"rescan_interval" json:"rescan_interval"`
+	MinerTTL           string `yaml:"miner_ttl" json:"miner_ttl"`
 
 	IPs     []string `yaml:"ips" json:"ips"`
 	Subnets []string `yaml:"subnets" json:"subnets"`
@@ -63,11 +72,14 @@ type fileConfig struct {
 // Explicit paths that cannot be read return an error. Auto-discovery is optional.
 func Load(path string) (Config, error) {
 	cfg := Config{
-		HTTPAddr:       ":8080",
-		PollInterval:   30 * time.Second,
-		HistoryPoints:  240,
-		ScanTimeoutSec: 8,
-		Concurrent:     200,
+		HTTPAddr:         ":8080",
+		PollInterval:     30 * time.Second,
+		HistoryPoints:    0, // sized from HistoryRetention in clamp
+		HistoryRetention: 7 * 24 * time.Hour,
+		ScanTimeoutSec:   8,
+		Concurrent:       200,
+		RescanInterval:   30 * time.Minute,
+		MinerTTL:          7 * 24 * time.Hour,
 	}
 
 	resolved, explicit := resolvePath(path)
@@ -134,11 +146,26 @@ func applyFile(cfg *Config, fc fileConfig) {
 	if fc.HistoryPoints != nil {
 		cfg.HistoryPoints = *fc.HistoryPoints
 	}
+	if v := strings.TrimSpace(fc.HistoryRetention); v != "" {
+		if d, err := parseDuration(v); err == nil {
+			cfg.HistoryRetention = d
+		}
+	}
 	if fc.ScanTimeoutSec != nil {
 		cfg.ScanTimeoutSec = *fc.ScanTimeoutSec
 	}
 	if fc.Concurrent != nil {
 		cfg.Concurrent = *fc.Concurrent
+	}
+	if v := strings.TrimSpace(fc.RescanInterval); v != "" {
+		if d, err := parseDuration(v); err == nil {
+			cfg.RescanInterval = d
+		}
+	}
+	if v := strings.TrimSpace(fc.MinerTTL); v != "" {
+		if d, err := parseDuration(v); err == nil {
+			cfg.MinerTTL = d
+		}
 	}
 
 	cfg.MinerIPs = appendUnique(cfg.MinerIPs, fc.IPs...)
@@ -177,6 +204,11 @@ func applyEnv(cfg *Config) {
 			cfg.HistoryPoints = n
 		}
 	}
+	if v := strings.TrimSpace(os.Getenv("HISTORY_RETENTION")); v != "" {
+		if d, err := parseDuration(v); err == nil {
+			cfg.HistoryRetention = d
+		}
+	}
 	if v := strings.TrimSpace(os.Getenv("SCAN_TIMEOUT_SEC")); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			cfg.ScanTimeoutSec = n
@@ -185,6 +217,16 @@ func applyEnv(cfg *Config) {
 	if v := strings.TrimSpace(os.Getenv("SCAN_CONCURRENT")); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			cfg.Concurrent = n
+		}
+	}
+	if v := strings.TrimSpace(os.Getenv("RESCAN_INTERVAL")); v != "" {
+		if d, err := parseDuration(v); err == nil {
+			cfg.RescanInterval = d
+		}
+	}
+	if v := strings.TrimSpace(os.Getenv("MINER_TTL")); v != "" {
+		if d, err := parseDuration(v); err == nil {
+			cfg.MinerTTL = d
 		}
 	}
 
@@ -203,17 +245,30 @@ func applyEnv(cfg *Config) {
 }
 
 func clamp(cfg *Config) {
-	if cfg.HistoryPoints < 10 {
-		cfg.HistoryPoints = 10
-	}
 	if cfg.PollInterval < 5*time.Second {
 		cfg.PollInterval = 5 * time.Second
+	}
+	if cfg.HistoryRetention < cfg.PollInterval {
+		cfg.HistoryRetention = 7 * 24 * time.Hour
+	}
+	// Ring capacity must cover retention at the poll cadence (plus a small buffer).
+	needed := int(cfg.HistoryRetention/cfg.PollInterval) + 2
+	if needed < 10 {
+		needed = 10
+	}
+	if cfg.HistoryPoints < needed {
+		cfg.HistoryPoints = needed
 	}
 	if cfg.ScanTimeoutSec < 1 {
 		cfg.ScanTimeoutSec = 1
 	}
 	if cfg.Concurrent < 1 {
 		cfg.Concurrent = 1
+	}
+	// RescanInterval <= 0 means "scan at startup only" (no periodic rescan).
+	// MinerTTL <= 0 means "never prune".
+	if cfg.MinerTTL < 0 {
+		cfg.MinerTTL = 0
 	}
 }
 
@@ -241,6 +296,17 @@ func (c Config) Summary() string {
 		parts = append(parts, "targets=none")
 	}
 	parts = append(parts, "interval="+c.PollInterval.String())
+	if c.RescanInterval > 0 {
+		parts = append(parts, "rescan="+c.RescanInterval.String())
+	} else {
+		parts = append(parts, "rescan=off")
+	}
+	if c.MinerTTL > 0 {
+		parts = append(parts, "miner_ttl="+c.MinerTTL.String())
+	} else {
+		parts = append(parts, "miner_ttl=forever")
+	}
+	parts = append(parts, "history="+c.HistoryRetention.String())
 	return strings.Join(parts, " ")
 }
 

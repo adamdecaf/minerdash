@@ -71,7 +71,9 @@ func (s *Store) SetPolling(v bool) {
 	s.mu.Unlock()
 }
 
-// Upsert replaces a miner snapshot and appends history samples.
+// Upsert replaces a miner snapshot and appends history samples on success.
+// Failed polls merge an error onto any existing snapshot without wiping
+// identity / last-good telemetry, and do not advance LastSeen.
 func (s *Store) Upsert(d models.Detail) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -80,14 +82,35 @@ func (s *Store) Upsert(d models.Detail) {
 	if d.UpdatedAt.IsZero() {
 		d.UpdatedAt = now
 	}
-	if d.LastSeen.IsZero() && d.Error == "" {
-		d.LastSeen = now
+
+	existing, had := s.miners[d.ID]
+
+	if d.Error != "" {
+		if had {
+			merged := existing
+			merged.Error = d.Error
+			merged.UpdatedAt = d.UpdatedAt
+			if merged.LastSeen.IsZero() {
+				// First contact was an error — start the TTL clock now.
+				merged.LastSeen = now
+			}
+			s.miners[d.ID] = merged
+		} else {
+			if d.LastSeen.IsZero() {
+				d.LastSeen = now
+			}
+			s.miners[d.ID] = d
+		}
+		return
+	}
+
+	d.Error = ""
+	d.LastSeen = now
+	if d.UpdatedAt.IsZero() {
+		d.UpdatedAt = now
 	}
 	s.miners[d.ID] = d
 
-	if d.Error != "" {
-		return
-	}
 	s.pushLocked(d.ID, "hashrate", d.HashrateTH, d.UpdatedAt)
 	// "temp" charts the hottest ASIC reading when available, else average.
 	temp := d.AvgTempC
@@ -133,6 +156,33 @@ func (s *Store) MarkPoll(err error) {
 	}
 }
 
+// Prune removes miners whose LastSeen is older than ttl and drops their history.
+// Returns the pruned miner IDs. A non-positive ttl disables pruning.
+func (s *Store) Prune(ttl time.Duration) []string {
+	if ttl <= 0 {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	cutoff := time.Now().UTC().Add(-ttl)
+	var removed []string
+	for id, d := range s.miners {
+		seen := d.LastSeen
+		if seen.IsZero() {
+			seen = d.UpdatedAt
+		}
+		if seen.IsZero() || !seen.Before(cutoff) {
+			continue
+		}
+		delete(s.miners, id)
+		delete(s.history, id)
+		removed = append(removed, id)
+	}
+	sort.Strings(removed)
+	return removed
+}
+
 // List returns all miner snapshots sorted by IP.
 func (s *Store) List() []models.Snapshot {
 	s.mu.RLock()
@@ -153,8 +203,14 @@ func (s *Store) Get(id string) (models.Detail, bool) {
 	return d, ok
 }
 
+// HistoryOptions filters returned series points.
+type HistoryOptions struct {
+	Since time.Time // inclusive; zero = no lower bound
+	Until time.Time // inclusive; zero = no upper bound
+}
+
 // History returns series for the given metric and miner IDs (empty IDs = all).
-func (s *Store) History(metric string, ids []string) []models.Series {
+func (s *Store) History(metric string, ids []string, opts HistoryOptions) []models.Series {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -175,11 +231,12 @@ func (s *Store) History(metric string, ids []string) []models.Series {
 		if r == nil {
 			continue
 		}
+		points := filterPoints(r.slice(), opts.Since, opts.Until)
 		ser := models.Series{
 			ID:     id,
 			Label:  id,
 			Metric: metric,
-			Points: r.slice(),
+			Points: points,
 		}
 		if d, ok := s.miners[id]; ok {
 			ser.Make = d.Make
@@ -195,6 +252,24 @@ func (s *Store) History(metric string, ids []string) []models.Series {
 		out = append(out, ser)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
+func filterPoints(pts []models.HistoryPoint, since, until time.Time) []models.HistoryPoint {
+	if since.IsZero() && until.IsZero() {
+		return pts
+	}
+	out := make([]models.HistoryPoint, 0, len(pts))
+	for _, p := range pts {
+		t := p.T
+		if !since.IsZero() && t.Before(since) {
+			continue
+		}
+		if !until.IsZero() && t.After(until) {
+			continue
+		}
+		out = append(out, p)
+	}
 	return out
 }
 
