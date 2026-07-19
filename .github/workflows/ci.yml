@@ -3,12 +3,16 @@ name: CI
 on:
   push:
     branches: [main, master]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  DOCKER_IMAGE: adamdecaf/hasherdash
 
 jobs:
   build:
@@ -95,21 +99,56 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build image
+      # On release tags (v*), publish both:
+      #   adamdecaf/hasherdash:<version>  (e.g. 1.0.0 from tag v1.0.0)
+      #   adamdecaf/hasherdash:latest
+      # On branch/PR: build only as :ci for smoke test (no Hub push).
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable=${{ github.ref_type == 'tag' }}
+            type=raw,value=ci,enable=${{ github.ref_type != 'tag' }}
+
+      - name: Login to Docker Hub
+        if: github.ref_type == 'tag'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push release image
+        if: github.ref_type == 'tag'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=hasherdash-docker
+          cache-to: type=gha,mode=max,scope=hasherdash-docker
+
+      - name: Build image (CI smoke)
+        if: github.ref_type != 'tag'
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile
           push: false
           load: true
-          tags: hasherdash:ci
+          tags: ${{ env.DOCKER_IMAGE }}:ci
           cache-from: type=gha,scope=hasherdash-docker
           cache-to: type=gha,mode=max,scope=hasherdash-docker
 
       - name: Smoke-test image
+        if: github.ref_type != 'tag'
         run: |
-          docker run --rm --entrypoint /usr/local/bin/hasherdash hasherdash:ci -h 2>&1 | head -20 || true
-          docker run --rm --entrypoint /bin/sh hasherdash:ci -c '
+          docker run --rm --entrypoint /usr/local/bin/hasherdash ${{ env.DOCKER_IMAGE }}:ci -h 2>&1 | head -20 || true
+          docker run --rm --entrypoint /bin/sh ${{ env.DOCKER_IMAGE }}:ci -c '
             set -e
             test -x /usr/local/bin/hasherdash
             test -f /usr/local/lib/libasic_rs_ffi.so

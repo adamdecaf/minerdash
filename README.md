@@ -10,11 +10,30 @@ Compact table, filters, miner detail, and live charts for a wall monitor (20+ mi
 
 The image builds `asic-rs-go` from the public Go module proxy — no separate checkout.
 
-**Docker Compose (recommended):**
+Published images: **[adamdecaf/hasherdash](https://hub.docker.com/r/adamdecaf/hasherdash)** (pushed on git tags `v*`).
+
+**Pull a release (no local build):**
 
 ```bash
-# optional: MINER_SUBNET=192.168.1.0/24 docker compose up -d --build
-docker compose up -d --build
+mkdir -p data
+docker pull adamdecaf/hasherdash:latest
+docker run --rm --network host \
+  -e MINER_SUBNET=192.168.1.0/24 \
+  -e SQLITE_PATH=/app/data/hasherdash.db \
+  -v "$PWD/data:/app/data" \
+  adamdecaf/hasherdash:latest
+```
+
+**Docker Compose (recommended — pulls `:latest` from Hub):**
+
+```bash
+mkdir -p data
+# optional: MINER_SUBNET=192.168.1.0/24
+docker compose up -d
+# upgrade to newest latest:
+# docker compose pull && docker compose up -d
+# or build from this checkout instead of pulling:
+# docker compose up -d --build
 ```
 
 SQLite is bind-mounted to the host at **`./data/hasherdash.db`** (`./data` → `/app/data` in the container). Create the directory first if needed:
@@ -25,7 +44,7 @@ mkdir -p data
 
 Open http://localhost:8080
 
-**Plain `docker run`:**
+**Plain `docker run` (local build):**
 
 ```bash
 make docker
@@ -86,7 +105,7 @@ Successful polls append samples (hashrate, temps, power, efficiency, chips, …)
 
 **Docker data mount:** bind a host directory to `/app/data` and leave `SQLITE_PATH=/app/data/hasherdash.db`. With Compose this is `./data` → host file `./data/hasherdash.db`.
 
-The image entrypoint runs briefly as root to `chown` the bind-mounted data dir to uid `10001`, then drops privileges. Rebuild the image after pulling so that entrypoint is present (`docker compose up -d --build`).
+The image entrypoint runs briefly as root to `chown` the bind-mounted data dir to uid `10001`, then drops privileges. After upgrading the image, recreate the container (`docker compose pull && docker compose up -d`).
 
 If you still hit permission errors on an old image:
 
@@ -171,3 +190,9 @@ Dockerfile         multi-stage (module proxy + Rust FFI + cgo)
 - Metric history uses pure-Go SQLite ([modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite)); no extra system library.
 - Docker builds pull `github.com/adamdecaf/asic-rs-go` and compile the FFI inside the image.
 - CI builds the binary and Docker image on every push/PR.
+- Release tags `v*` publish two Hub tags: `adamdecaf/hasherdash:<version>` (e.g. `1.0.0` from `v1.0.0`) and `adamdecaf/hasherdash:latest`. Compose always pulls `:latest`.
+- Local publish: `make docker-push` (after `docker login`; override with `DOCKER_IMAGE=` / `VERSION=`).
+- GitHub Actions secrets for Hub publish: `DOCKER_USERNAME`, `DOCKER_PASSWORD` (Hub password or access token with write access).
+
+
+

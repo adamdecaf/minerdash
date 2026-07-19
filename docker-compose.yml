@@ -1,9 +1,13 @@
 # Metric history is stored on the host at ./data/hasherdash.db
 # (bind-mounted to /app/data inside the container).
+#
+# Pulls adamdecaf/hasherdash:latest from Docker Hub on up.
+# Local build from this checkout: docker compose up -d --build
 
 services:
   hasherdash:
-    image: hasherdash:latest
+    image: adamdecaf/hasherdash:latest
+    pull_policy: always
     build:
       context: .
       dockerfile: Dockerfile
