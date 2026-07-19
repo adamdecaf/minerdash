@@ -40,7 +40,7 @@ docker run --rm -p 8080:8080 --network host \
 
 `--network host` lets the container scan your LAN.
 
-Subnets are scanned **once** at startup; discovered miners are re-polled every `poll_interval` (default 30s).
+Subnets are re-scanned every `rescan_interval` (default 30m). Discovered miners stay in the fleet until `miner_ttl` (default 7d) after last successful poll, and are re-polled every `poll_interval` (default 30s).
 
 ## Local run (no Docker)
 
@@ -71,6 +71,9 @@ Or set: `-config /path` / `CONFIG_FILE=/path`.
 ```yaml
 http_addr: ":8080"
 poll_interval: 30s
+rescan_interval: 30m
+miner_ttl: 168h
+history_retention: 168h
 subnets:
   - 192.168.1.0/24
 # ips:
@@ -83,17 +86,20 @@ Full template: `hasherdash.example.yaml`.
 
 | Env | Default | Description |
 |-----|---------|-------------|
-| `MINER_SUBNET` / `MINER_SUBNETS` | — | CIDR(s), comma-separated; scanned once |
+| `MINER_SUBNET` / `MINER_SUBNETS` | — | CIDR(s), comma-separated; re-scanned on `RESCAN_INTERVAL` |
 | `MINER_IPS` | — | Comma-separated IPs to poll |
 | `MINER_RANGES` | — | asic-rs range strings (e.g. `192.168.1.1-50`) |
 | `CONFIG_FILE` | auto | Path to YAML/JSON config |
 | `HTTP_ADDR` | `:8080` | Listen address |
-| `POLL_INTERVAL` | `30s` | Backend poll interval |
-| `HISTORY_POINTS` | `240` | History ring length per metric |
+| `POLL_INTERVAL` | `30s` | Backend poll interval for known miners |
+| `RESCAN_INTERVAL` | `30m` | Full subnet/range discovery cadence (`0` = startup only) |
+| `MINER_TTL` | `168h` | Keep offline miners this long after last success (`0` = forever) |
+| `HISTORY_RETENTION` | `168h` | How long metric samples are kept for charts |
+| `HISTORY_POINTS` | auto | Optional ring size override (auto from retention ÷ poll) |
 | `SCAN_TIMEOUT_SEC` | `8` | Per-miner identify timeout |
 | `SCAN_CONCURRENT` | `200` | Discovery concurrency |
 
-UI refresh interval is separate (top-right control, `localStorage`).
+UI refresh interval is separate (top-right control, `localStorage`). Chart range defaults to **1d** with options for 4h / 12h / 1d / 3d / 7d / custom.
 
 ## API
 
@@ -103,7 +109,7 @@ UI refresh interval is separate (top-right control, `localStorage`).
 | GET | `/api/meta` | Fleet status + filter facets |
 | GET | `/api/miners` | Compact snapshots |
 | GET | `/api/miners/{ip}` | Detail (boards, fans, pools) |
-| GET | `/api/history?metric=hashrate&ids=a,b` | Time series |
+| GET | `/api/history?metric=hashrate&ids=a,b&window=1d` | Time series (`window`, or `since`/`until` RFC3339) |
 
 Metrics: `hashrate`, `temp`, `asic_temp`, `vr_temp`, `wattage`, `efficiency`, `chips`.
 

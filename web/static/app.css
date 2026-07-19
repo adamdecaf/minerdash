@@ -447,6 +447,30 @@ body {
   overflow: hidden;
 }
 
+.chart-head {
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.chart-controls {
+  flex-wrap: wrap;
+  row-gap: 0.35rem;
+}
+
+.chart-custom-range {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.6rem;
+}
+
+.chart-custom-range input[type="datetime-local"] {
+  font: inherit;
+  font-size: 0.8rem;
+  max-width: 11.5rem;
+  padding: 0.15rem 0.3rem;
+}
+
 .chart-wrap {
   position: relative;
   width: 100%;

@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -82,7 +83,52 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	writeJSON(w, http.StatusOK, s.store.History(metric, ids))
+	opts := store.HistoryOptions{}
+	if raw := strings.TrimSpace(r.URL.Query().Get("since")); raw != "" {
+		t, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			http.Error(w, "invalid since (use RFC3339)", http.StatusBadRequest)
+			return
+		}
+		opts.Since = t.UTC()
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("until")); raw != "" {
+		t, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			http.Error(w, "invalid until (use RFC3339)", http.StatusBadRequest)
+			return
+		}
+		opts.Until = t.UTC()
+	}
+	// window=4h|12h|1d|… — relative to now when since is unset.
+	if opts.Since.IsZero() {
+		if raw := strings.TrimSpace(r.URL.Query().Get("window")); raw != "" {
+			d, err := parseWindow(raw)
+			if err != nil {
+				http.Error(w, "invalid window", http.StatusBadRequest)
+				return
+			}
+			if d > 0 {
+				opts.Since = time.Now().UTC().Add(-d)
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, s.store.History(metric, ids, opts))
+}
+
+// parseWindow accepts Go durations (4h, 30m) and day shorthands (1d, 3d, 7d).
+func parseWindow(raw string) (time.Duration, error) {
+	if d, err := time.ParseDuration(raw); err == nil {
+		return d, nil
+	}
+	if strings.HasSuffix(raw, "d") {
+		days, err := strconv.Atoi(strings.TrimSuffix(raw, "d"))
+		if err != nil || days <= 0 {
+			return 0, strconv.ErrSyntax
+		}
+		return time.Duration(days) * 24 * time.Hour, nil
+	}
+	return 0, strconv.ErrSyntax
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

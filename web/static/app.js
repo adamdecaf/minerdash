@@ -217,7 +217,102 @@
     );
   }
 
+  const CHART_RANGE_LS_KEY = "chartRange";
+  const CHART_CUSTOM_LS_KEY = "chartCustomRange";
+  const VALID_CHART_RANGES = new Set(["4h", "12h", "1d", "3d", "7d", "custom"]);
+
+  function loadChartRange() {
+    const raw = localStorage.getItem(CHART_RANGE_LS_KEY) || "1d";
+    return VALID_CHART_RANGES.has(raw) ? raw : "1d";
+  }
+
+  function loadChartCustom() {
+    try {
+      const raw = localStorage.getItem(CHART_CUSTOM_LS_KEY);
+      if (!raw) return { from: "", to: "" };
+      const parsed = JSON.parse(raw);
+      return {
+        from: parsed && typeof parsed.from === "string" ? parsed.from : "",
+        to: parsed && typeof parsed.to === "string" ? parsed.to : "",
+      };
+    } catch {
+      return { from: "", to: "" };
+    }
+  }
+
+  function saveChartCustom() {
+    localStorage.setItem(
+      CHART_CUSTOM_LS_KEY,
+      JSON.stringify({ from: state.chartFrom, to: state.chartTo }),
+    );
+  }
+
+  /** Convert datetime-local value to UTC RFC3339 for the API. */
+  function localInputToRFC3339(v) {
+    if (!v) return null;
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toISOString();
+  }
+
+  /** Format a Date as datetime-local value in local timezone. */
+  function toLocalInputValue(d) {
+    if (!(d instanceof Date) || Number.isNaN(d.getTime())) return "";
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  function windowMs(range) {
+    switch (range) {
+      case "4h": return 4 * 3600 * 1000;
+      case "12h": return 12 * 3600 * 1000;
+      case "1d": return 24 * 3600 * 1000;
+      case "3d": return 3 * 24 * 3600 * 1000;
+      case "7d": return 7 * 24 * 3600 * 1000;
+      default: return 24 * 3600 * 1000;
+    }
+  }
+
+  /** Resolve the active chart time window as epoch ms { since, until }. */
+  function chartWindowBounds() {
+    const now = Date.now();
+    if (state.chartRange === "custom") {
+      let since = state.chartFrom ? new Date(state.chartFrom).getTime() : NaN;
+      let until = state.chartTo ? new Date(state.chartTo).getTime() : NaN;
+      if (!Number.isFinite(since) && !Number.isFinite(until)) {
+        until = now;
+        since = now - windowMs("1d");
+      } else if (!Number.isFinite(since)) {
+        since = until - windowMs("1d");
+      } else if (!Number.isFinite(until)) {
+        until = now;
+      }
+      return { since, until };
+    }
+    const span = windowMs(state.chartRange);
+    return { since: now - span, until: now };
+  }
+
+  /** Build since/until query params for /api/history from the current range UI. */
+  function historyTimeParams() {
+    const params = new URLSearchParams();
+    if (state.chartRange === "custom") {
+      const since = localInputToRFC3339(state.chartFrom);
+      const until = localInputToRFC3339(state.chartTo);
+      if (since) params.set("since", since);
+      if (until) params.set("until", until);
+      // If only "to" is set, still bound the window; if neither, fall back to 1d.
+      if (!since && !until) {
+        params.set("window", "1d");
+      }
+    } else {
+      params.set("window", state.chartRange);
+    }
+    return params;
+  }
+
   const savedSort = loadSort();
+  const savedCustom = loadChartCustom();
   const state = {
     miners: [],
     meta: null,
@@ -229,6 +324,9 @@
     sortDir: savedSort.sortDir,
     visibleColumns: loadVisibleColumns(),
     filtersWidth: loadFiltersWidth(),
+    chartRange: loadChartRange(),
+    chartFrom: savedCustom.from,
+    chartTo: savedCustom.to,
     refreshSec: Number(localStorage.getItem("refreshSec") || 30),
     timer: null,
   };
@@ -270,6 +368,10 @@
     filterCount: $("filter-count"),
     detail: $("detail-body"),
     chartMetric: $("chart-metric"),
+    chartRange: $("chart-range"),
+    chartCustomRange: $("chart-custom-range"),
+    chartFrom: $("chart-from"),
+    chartTo: $("chart-to"),
     chartScope: $("chart-scope"),
     chart: $("chart"),
     legend: $("chart-legend"),
@@ -883,16 +985,24 @@
       return;
     }
 
-    let tMin = Infinity, tMax = -Infinity, vMin = Infinity, vMax = -Infinity;
+    // Prefer the selected UI window for the x-axis so empty ranges still show full width.
+    const win = chartWindowBounds();
+    let tMin = win.since;
+    let tMax = win.until;
+    let vMin = Infinity, vMax = -Infinity;
+    let dataTMin = Infinity, dataTMax = -Infinity;
     for (const s of series) {
       for (const p of s.points) {
         const t = new Date(p.t).getTime();
-        if (t < tMin) tMin = t;
-        if (t > tMax) tMax = t;
+        if (t < dataTMin) dataTMin = t;
+        if (t > dataTMax) dataTMax = t;
         if (p.v < vMin) vMin = p.v;
         if (p.v > vMax) vMax = p.v;
       }
     }
+    // If data extends outside the nominal window (clock skew), expand slightly.
+    if (Number.isFinite(dataTMin) && dataTMin < tMin) tMin = dataTMin;
+    if (Number.isFinite(dataTMax) && dataTMax > tMax) tMax = dataTMax;
     if (tMin === tMax) tMax = tMin + 1;
     if (vMin === vMax) {
       vMin = vMin - 1;
@@ -932,14 +1042,32 @@
       const y = pad.t + (plotH * i) / 4;
       ctx.fillText(fmt(v, vMax - vMin > 20 ? 0 : 1), pad.l - 6, y);
     }
-    // x labels
+    // x labels — include date when the window spans more than ~1 day
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
     const xTicks = 5;
+    const spanMs = tMax - tMin;
+    const multiDay = spanMs > 26 * 3600 * 1000;
     for (let i = 0; i <= xTicks; i++) {
       const t = tMin + ((tMax - tMin) * i) / xTicks;
       const x = xOf(t);
-      ctx.fillText(new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }), x, h - pad.b + 6);
+      const d = new Date(t);
+      let label;
+      if (multiDay) {
+        label = d.toLocaleString([], {
+          month: "short",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+      } else {
+        label = d.toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: spanMs < 2 * 3600 * 1000 ? "2-digit" : undefined,
+        });
+      }
+      ctx.fillText(label, x, h - pad.b + 6);
     }
     ctx.globalAlpha = 1;
 
@@ -996,14 +1124,39 @@
     renderDetail();
   }
 
+  function syncChartRangeUI() {
+    if (els.chartRange) els.chartRange.value = state.chartRange;
+    if (els.chartCustomRange) {
+      els.chartCustomRange.hidden = state.chartRange !== "custom";
+    }
+    if (els.chartFrom && state.chartFrom) els.chartFrom.value = state.chartFrom;
+    if (els.chartTo && state.chartTo) els.chartTo.value = state.chartTo;
+  }
+
+  function ensureCustomDefaults() {
+    // When switching to custom with empty bounds, seed last 24h.
+    if (state.chartRange !== "custom") return;
+    if (state.chartFrom && state.chartTo) return;
+    const to = new Date();
+    const from = new Date(to.getTime() - windowMs("1d"));
+    if (!state.chartFrom) state.chartFrom = toLocalInputValue(from);
+    if (!state.chartTo) state.chartTo = toLocalInputValue(to);
+    if (els.chartFrom) els.chartFrom.value = state.chartFrom;
+    if (els.chartTo) els.chartTo.value = state.chartTo;
+    saveChartCustom();
+  }
+
   async function loadHistory() {
     const metric = els.chartMetric.value;
     const scope = els.chartScope.value;
+    const timeQ = historyTimeParams();
 
     // Full fleet history (no ids) supplies brand/model facets for filters.
     let allSeries = [];
     try {
-      allSeries = await api(`/api/history?metric=${encodeURIComponent(metric)}`);
+      const q = new URLSearchParams(timeQ);
+      q.set("metric", metric);
+      allSeries = await api(`/api/history?${q.toString()}`);
     } catch {
       allSeries = [];
     }
@@ -1114,6 +1267,32 @@
 
     els.chartMetric.addEventListener("change", () => loadHistory());
     els.chartScope.addEventListener("change", () => loadHistory());
+
+    if (els.chartRange) {
+      syncChartRangeUI();
+      els.chartRange.addEventListener("change", () => {
+        state.chartRange = els.chartRange.value;
+        if (!VALID_CHART_RANGES.has(state.chartRange)) state.chartRange = "1d";
+        localStorage.setItem(CHART_RANGE_LS_KEY, state.chartRange);
+        if (state.chartRange === "custom") ensureCustomDefaults();
+        syncChartRangeUI();
+        loadHistory();
+      });
+    }
+    if (els.chartFrom) {
+      els.chartFrom.addEventListener("change", () => {
+        state.chartFrom = els.chartFrom.value;
+        saveChartCustom();
+        if (state.chartRange === "custom") loadHistory();
+      });
+    }
+    if (els.chartTo) {
+      els.chartTo.addEventListener("change", () => {
+        state.chartTo = els.chartTo.value;
+        saveChartCustom();
+        if (state.chartRange === "custom") loadHistory();
+      });
+    }
 
     els.table.querySelector("thead").addEventListener("click", (ev) => {
       const th = ev.target.closest("th[data-sort]");

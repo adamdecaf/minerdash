@@ -259,9 +259,9 @@
       <!-- Column 2: chart + compact table -->
       <section class="col-right">
         <section class="card panel chart-panel">
-          <header class="panel-head">
+          <header class="panel-head chart-head">
             <h3>Metrics</h3>
-            <div class="hstack gap">
+            <div class="hstack gap chart-controls">
               <label class="inline-label">
                 Metric
                 <select id="chart-metric" class="small">
@@ -276,6 +276,27 @@
                   <option value="chips">Chips</option>
                 </select>
               </label>
+              <label class="inline-label">
+                Range
+                <select id="chart-range" class="small" title="Chart time window">
+                  <option value="4h">4h</option>
+                  <option value="12h">12h</option>
+                  <option value="1d" selected>1d</option>
+                  <option value="3d">3d</option>
+                  <option value="7d">7d</option>
+                  <option value="custom">Custom…</option>
+                </select>
+              </label>
+              <span id="chart-custom-range" class="chart-custom-range" hidden>
+                <label class="inline-label">
+                  From
+                  <input id="chart-from" type="datetime-local" class="small" />
+                </label>
+                <label class="inline-label">
+                  To
+                  <input id="chart-to" type="datetime-local" class="small" />
+                </label>
+              </span>
               <label class="inline-label">
                 Series
                 <select id="chart-scope" class="small">
