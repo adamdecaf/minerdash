@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>hasherdash — ASIC miner fleet dashboard</title>
+  <meta name="description" content="Read-only fleet dashboard for ASIC miners. Compact table, filters, miner detail, and live charts for wall monitors." />
+  <meta name="color-scheme" content="dark" />
+  <meta property="og:title" content="hasherdash" />
+  <meta property="og:description" content="Read-only fleet dashboard for ASIC miners." />
+  <meta property="og:image" content="images/hasherdash.png" />
+  <meta property="og:type" content="website" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="./">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <strong>hasherdash</strong>
+      </a>
+      <nav class="nav">
+        <a href="#features">Features</a>
+        <a href="#screenshot">Screenshot</a>
+        <a href="#quickstart">Quick start</a>
+        <a class="btn btn-sm" href="https://github.com/adamdecaf/hasherdash">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="wrap hero-inner">
+        <p class="eyebrow">Read-only · Go · oat.ink</p>
+        <h1>Fleet dashboard for ASIC miners</h1>
+        <p class="lede">
+          Compact table, filters, miner detail, and live charts built for a wall monitor
+          with 20+ miners. Discover on your LAN, poll continuously, stay read-only.
+        </p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="#quickstart">Get started</a>
+          <a class="btn" href="https://github.com/adamdecaf/hasherdash">View on GitHub</a>
+        </div>
+        <ul class="hero-meta">
+          <li>Subnet discovery</li>
+          <li>Live metrics &amp; charts</li>
+          <li>Docker one-liner</li>
+          <li>No write controls</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="screenshot" class="screenshot-section">
+      <div class="wrap">
+        <figure class="shot">
+          <img
+            src="images/hasherdash.png"
+            alt="hasherdash dashboard showing live hashrate chart, filters, and fleet table for Bitaxe and Nerdaxe miners"
+            width="1571"
+            height="792"
+            loading="eager"
+          />
+          <figcaption>Live fleet view — filters, multi-series charts, and per-miner status at a glance.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section id="features" class="features">
+      <div class="wrap">
+        <h2>Built for ops walls</h2>
+        <p class="section-lede">
+          See the whole fleet without logging into each miner. Designed for dark rooms and glanceable status.
+        </p>
+        <div class="feature-grid">
+          <article class="card">
+            <h3>Discover &amp; poll</h3>
+            <p>
+              Scan CIDRs, ranges, or fixed IPs. Known miners stay in the fleet until TTL,
+              re-polled on a configurable interval.
+            </p>
+          </article>
+          <article class="card">
+            <h3>Filter the noise</h3>
+            <p>
+              Search by IP, host, model, or serial. Narrow by brand, firmware, algo, status,
+              hashrate, temps, power, chips, and efficiency.
+            </p>
+          </article>
+          <article class="card">
+            <h3>Live charts</h3>
+            <p>
+              Canvas charts for hashrate, temp, ASIC/VR temp, wattage, efficiency, and chips —
+              with window presets from 4h to 7d.
+            </p>
+          </article>
+          <article class="card">
+            <h3>Miner detail</h3>
+            <p>
+              Select a row for boards, fans, and pools without leaving the dashboard.
+            </p>
+          </article>
+          <article class="card">
+            <h3>Read-only by design</h3>
+            <p>
+              No restart, pool, or power controls in the UI. Safe to leave up on a shared monitor.
+            </p>
+          </article>
+          <article class="card">
+            <h3>Simple deploy</h3>
+            <p>
+              Single Docker image with asic-rs FFI baked in, or run locally with a sibling FFI build.
+            </p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="quickstart" class="quickstart">
+      <div class="wrap">
+        <h2>Quick start</h2>
+        <p class="section-lede">Docker is the fastest path. Host networking lets the container scan your LAN.</p>
+
+        <div class="steps">
+          <div class="step">
+            <span class="step-num">1</span>
+            <div>
+              <h3>Build the image</h3>
+              <pre><code>make docker</code></pre>
+            </div>
+          </div>
+          <div class="step">
+            <span class="step-num">2</span>
+            <div>
+              <h3>Run with a subnet</h3>
+              <pre><code>docker run --rm -p 8080:8080 --network host \
+  -e MINER_SUBNET=192.168.1.0/24 \
+  hasherdash:latest</code></pre>
+            </div>
+          </div>
+          <div class="step">
+            <span class="step-num">3</span>
+            <div>
+              <h3>Open the UI</h3>
+              <pre><code>open http://localhost:8080</code></pre>
+            </div>
+          </div>
+        </div>
+
+        <details class="more">
+          <summary>Config file instead of env</summary>
+          <pre><code>cp hasherdash.example.yaml hasherdash.yaml
+# edit subnets under:
+#   subnets:
+#     - 192.168.1.0/24
+
+make docker
+
+docker run --rm -p 8080:8080 --network host \
+  -v "$PWD/hasherdash.yaml:/app/hasherdash.yaml:ro" \
+  -e CONFIG_FILE=/app/hasherdash.yaml \
+  hasherdash:latest</code></pre>
+        </details>
+
+        <p class="docs-link">
+          Full config, API, and local (non-Docker) setup are in the
+          <a href="https://github.com/adamdecaf/hasherdash#readme">README</a>.
+        </p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-inner">
+      <p>
+        <strong>hasherdash</strong> — MIT License ·
+        <a href="https://github.com/adamdecaf/hasherdash">adamdecaf/hasherdash</a>
+      </p>
+      <p class="muted">Powered by <a href="https://github.com/adamdecaf/asic-rs-go">asic-rs-go</a> · UI via <a href="https://oat.ink/">oat.ink</a></p>
+    </div>
+  </footer>
+</body>
+</html>
