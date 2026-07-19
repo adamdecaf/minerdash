@@ -17,7 +17,7 @@ jobs:
     timeout-minutes: 45
 
     steps:
-      - name: Checkout minerdash
+      - name: Checkout hasherdash
         uses: actions/checkout@v4
 
       - name: Install system dependencies
@@ -64,19 +64,19 @@ jobs:
           CGO_ENABLED: "0"
         run: go test ./internal/config ./internal/store ./internal/axetemp -count=1
 
-      - name: Build minerdash
+      - name: Build hasherdash
         env:
           CGO_ENABLED: "1"
         run: |
           # Use the tree with the built FFI (module cache has no .so/.a).
           go mod edit -replace=github.com/adamdecaf/asic-rs-go=/tmp/asic-rs-go
-          go build -trimpath -o bin/minerdash ./cmd/minerdash
+          go build -trimpath -o bin/hasherdash ./cmd/hasherdash
 
       - name: Verify binary links
         run: |
-          test -x bin/minerdash
-          file bin/minerdash
-          ldd bin/minerdash | tee /tmp/ldd.txt
+          test -x bin/hasherdash
+          file bin/hasherdash
+          ldd bin/hasherdash | tee /tmp/ldd.txt
           if grep -q asic_rs_ffi /tmp/ldd.txt; then
             echo "linked against libasic_rs_ffi (shared)"
           else
@@ -89,7 +89,7 @@ jobs:
     timeout-minutes: 60
 
     steps:
-      - name: Checkout minerdash
+      - name: Checkout hasherdash
         uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
@@ -102,17 +102,17 @@ jobs:
           file: Dockerfile
           push: false
           load: true
-          tags: minerdash:ci
-          cache-from: type=gha,scope=minerdash-docker
-          cache-to: type=gha,mode=max,scope=minerdash-docker
+          tags: hasherdash:ci
+          cache-from: type=gha,scope=hasherdash-docker
+          cache-to: type=gha,mode=max,scope=hasherdash-docker
 
       - name: Smoke-test image
         run: |
-          docker run --rm --entrypoint /usr/local/bin/minerdash minerdash:ci -h 2>&1 | head -20 || true
-          docker run --rm --entrypoint /bin/sh minerdash:ci -c '
+          docker run --rm --entrypoint /usr/local/bin/hasherdash hasherdash:ci -h 2>&1 | head -20 || true
+          docker run --rm --entrypoint /bin/sh hasherdash:ci -c '
             set -e
-            test -x /usr/local/bin/minerdash
+            test -x /usr/local/bin/hasherdash
             test -f /usr/local/lib/libasic_rs_ffi.so
-            ldd /usr/local/bin/minerdash | grep -q asic_rs_ffi
+            ldd /usr/local/bin/hasherdash | grep -q asic_rs_ffi
             echo "docker image ok"
           '

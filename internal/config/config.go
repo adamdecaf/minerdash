@@ -12,7 +12,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config holds runtime settings for minerdash.
+// Config holds runtime settings for hasherdash.
 type Config struct {
 	HTTPAddr       string
 	PollInterval   time.Duration
@@ -57,8 +57,8 @@ type fileConfig struct {
 // Path resolution:
 //  1. path argument (from -config), if non-empty
 //  2. CONFIG_FILE environment variable
-//  3. first existing of: minerdash.yaml, minerdash.yml, config.yaml,
-//     config.yml, minerdash.json, config.json (current working directory)
+//  3. first existing of: hasherdash.yaml, hasherdash.yml, config.yaml,
+//     config.yml, hasherdash.json, config.json (current working directory)
 //
 // Explicit paths that cannot be read return an error. Auto-discovery is optional.
 func Load(path string) (Config, error) {
@@ -96,9 +96,9 @@ func resolvePath(flagPath string) (path string, explicit bool) {
 		return p, true
 	}
 	for _, c := range []string{
-		"minerdash.yaml", "minerdash.yml",
+		"hasherdash.yaml", "hasherdash.yml",
 		"config.yaml", "config.yml",
-		"minerdash.json", "config.json",
+		"hasherdash.json", "config.json",
 	} {
 		if st, err := os.Stat(c); err == nil && !st.IsDir() {
 			return c, false

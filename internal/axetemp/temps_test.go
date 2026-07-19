@@ -3,7 +3,7 @@ package axetemp
 import (
 	"testing"
 
-	"github.com/adamdecaf/minerdash/internal/models"
+	"github.com/adamdecaf/hasherdash/internal/models"
 )
 
 func f64(v float64) *float64 { return &v }

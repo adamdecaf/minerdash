@@ -1,5 +1,5 @@
-# minerdash configuration
-# Copy to minerdash.yaml (or set CONFIG_FILE / -config) and edit.
+# hasherdash configuration
+# Copy to hasherdash.yaml (or set CONFIG_FILE / -config) and edit.
 #
 # Discovery: use any combination of subnets (CIDR), ranges, and static IPs.
 # Subnets/ranges are scanned once; discovered miners are then polled each interval.

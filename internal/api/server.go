@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/adamdecaf/minerdash/internal/store"
-	"github.com/adamdecaf/minerdash/web"
+	"github.com/adamdecaf/hasherdash/internal/store"
+	"github.com/adamdecaf/hasherdash/web"
 )
 
 // Server is the HTTP API + static UI.

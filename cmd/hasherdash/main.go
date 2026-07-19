@@ -10,10 +10,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/adamdecaf/minerdash/internal/api"
-	"github.com/adamdecaf/minerdash/internal/config"
-	"github.com/adamdecaf/minerdash/internal/poller"
-	"github.com/adamdecaf/minerdash/internal/store"
+	"github.com/adamdecaf/hasherdash/internal/api"
+	"github.com/adamdecaf/hasherdash/internal/config"
+	"github.com/adamdecaf/hasherdash/internal/poller"
+	"github.com/adamdecaf/hasherdash/internal/store"
 )
 
 func main() {
@@ -25,10 +25,10 @@ func main() {
 		log.Fatalf("config: %v", err)
 	}
 	logger := log.New(os.Stdout, "", log.LstdFlags|log.Lmsgprefix)
-	logger.Printf("minerdash %s", cfg.Summary())
+	logger.Printf("hasherdash %s", cfg.Summary())
 
 	if !cfg.HasDiscoveryTargets() {
-		logger.Printf("warning: no ips/subnets/ranges configured — set them in minerdash.yaml or MINER_SUBNET / MINER_IPS")
+		logger.Printf("warning: no ips/subnets/ranges configured — set them in hasherdash.yaml or MINER_SUBNET / MINER_IPS")
 	}
 
 	st := store.New(cfg.HistoryPoints, int(cfg.PollInterval.Seconds()))

@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Multi-stage image: download asic-rs-go from the public module proxy,
-# build the Rust FFI, then link minerdash with cgo.
+# build the Rust FFI, then link hasherdash with cgo.
 # No sibling checkout required.
 
 # -----------------------------------------------------------------------------
@@ -34,7 +34,7 @@ RUN cargo build --release \
  && cp include/asic_rs_ffi.h /out/include/
 
 # -----------------------------------------------------------------------------
-# Stage 3: build minerdash (Go + cgo)
+# Stage 3: build hasherdash (Go + cgo)
 # -----------------------------------------------------------------------------
 FROM golang:1.24-bookworm AS build
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -46,7 +46,7 @@ COPY --from=mods /src/asic-rs-go /src/asic-rs-go
 COPY --from=ffi /out/lib/ /src/asic-rs-go/asicrs/lib/
 COPY --from=ffi /out/include/ /src/asic-rs-go/asicrs/include/
 
-WORKDIR /src/minerdash
+WORKDIR /src/hasherdash
 COPY go.mod go.sum ./
 # Prefer the in-image tree (with built .so/.a) over the bare module cache.
 RUN printf '\nreplace github.com/adamdecaf/asic-rs-go => /src/asic-rs-go\n' >> go.mod
@@ -57,7 +57,7 @@ ENV GOTOOLCHAIN=auto
 ENV CGO_CFLAGS="-I/src/asic-rs-go/asicrs/include"
 ENV CGO_LDFLAGS="-L/src/asic-rs-go/asicrs/lib -lasic_rs_ffi -lm -ldl -lpthread -Wl,-rpath,/usr/local/lib"
 RUN go mod download \
- && go build -trimpath -ldflags="-s -w" -o /out/minerdash ./cmd/minerdash
+ && go build -trimpath -ldflags="-s -w" -o /out/hasherdash ./cmd/hasherdash
 
 # -----------------------------------------------------------------------------
 # Stage 4: runtime
@@ -66,15 +66,15 @@ FROM debian:bookworm-slim AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd --system --uid 10001 --home /app --shell /usr/sbin/nologin minerdash
+    && useradd --system --uid 10001 --home /app --shell /usr/sbin/nologin hasherdash
 
 COPY --from=ffi /out/lib/libasic_rs_ffi.so /usr/local/lib/
 RUN ldconfig
-COPY --from=build /out/minerdash /usr/local/bin/minerdash
+COPY --from=build /out/hasherdash /usr/local/bin/hasherdash
 
-USER minerdash
+USER hasherdash
 WORKDIR /app
 ENV HTTP_ADDR=:8080
 ENV POLL_INTERVAL=30s
 EXPOSE 8080
-ENTRYPOINT ["/usr/local/bin/minerdash"]
+ENTRYPOINT ["/usr/local/bin/hasherdash"]

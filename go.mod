@@ -1,4 +1,4 @@
-module github.com/adamdecaf/minerdash
+module github.com/adamdecaf/hasherdash
 
 go 1.26.5
 

@@ -1,10 +1,10 @@
-# minerdash
+# hasherdash
 
 Read-only fleet dashboard for ASIC miners. Go + [oat.ink](https://oat.ink/) UI, powered by [asic-rs-go](https://github.com/adamdecaf/asic-rs-go).
 
 Compact table, filters, miner detail, and live charts for a wall monitor (20+ miners).
 
-![minerdash dashboard](docs/images/minerdash.png)
+![hasherdash dashboard](docs/images/hasherdash.png)
 
 ## Quick start (Docker)
 
@@ -17,7 +17,7 @@ make docker
 
 docker run --rm -p 8080:8080 --network host \
   -e MINER_SUBNET=192.168.1.0/24 \
-  minerdash:latest
+  hasherdash:latest
 ```
 
 Open http://localhost:8080
@@ -25,7 +25,7 @@ Open http://localhost:8080
 **Option B — config file:**
 
 ```bash
-cp minerdash.example.yaml minerdash.yaml
+cp hasherdash.example.yaml hasherdash.yaml
 # set your CIDR under subnets:
 #   subnets:
 #     - 192.168.1.0/24
@@ -33,9 +33,9 @@ cp minerdash.example.yaml minerdash.yaml
 make docker
 
 docker run --rm -p 8080:8080 --network host \
-  -v "$PWD/minerdash.yaml:/app/minerdash.yaml:ro" \
-  -e CONFIG_FILE=/app/minerdash.yaml \
-  minerdash:latest
+  -v "$PWD/hasherdash.yaml:/app/hasherdash.yaml:ro" \
+  -e CONFIG_FILE=/app/hasherdash.yaml \
+  hasherdash:latest
 ```
 
 `--network host` lets the container scan your LAN.
@@ -53,7 +53,7 @@ Needs a built [asic-rs-go](https://github.com/adamdecaf/asic-rs-go) FFI (sibling
 make ffi   # builds FFI in ../asic-rs-go (override with ASIC_RS_GO=…)
 
 export MINER_SUBNET=192.168.1.0/24
-# or: cp minerdash.example.yaml minerdash.yaml  # edit subnets
+# or: cp hasherdash.example.yaml hasherdash.yaml  # edit subnets
 
 make run
 ```
@@ -64,7 +64,7 @@ make run
 
 ### Config file
 
-Auto-loaded from cwd: `minerdash.yaml`, `minerdash.yml`, `config.yaml`, `config.yml`, `minerdash.json`, `config.json`.
+Auto-loaded from cwd: `hasherdash.yaml`, `hasherdash.yml`, `config.yaml`, `config.yml`, `hasherdash.json`, `config.json`.
 
 Or set: `-config /path` / `CONFIG_FILE=/path`.
 
@@ -77,7 +77,7 @@ subnets:
 #   - 192.168.1.10
 ```
 
-Full template: `minerdash.example.yaml`.
+Full template: `hasherdash.example.yaml`.
 
 ### Environment
 
@@ -110,7 +110,7 @@ Metrics: `hashrate`, `temp`, `asic_temp`, `vr_temp`, `wattage`, `efficiency`, `c
 ## Project layout
 
 ```
-cmd/minerdash/     entrypoint
+cmd/hasherdash/     entrypoint
 internal/          api, config, poller, store
 web/static/        oat.ink UI
 Dockerfile         multi-stage (module proxy + Rust FFI + cgo)

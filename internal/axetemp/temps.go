@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/adamdecaf/minerdash/internal/models"
+	"github.com/adamdecaf/hasherdash/internal/models"
 )
 
 // SameTemp reports whether two optional °C readings match within a small

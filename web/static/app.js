@@ -1,4 +1,4 @@
-/* minerdash frontend — vanilla JS + canvas charts */
+/* hasherdash frontend — vanilla JS + canvas charts */
 
 (() => {
   "use strict";

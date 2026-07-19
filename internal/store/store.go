@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/adamdecaf/minerdash/internal/models"
+	"github.com/adamdecaf/hasherdash/internal/models"
 )
 
 // Store is an in-memory fleet cache with per-miner metric history.

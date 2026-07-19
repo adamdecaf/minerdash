@@ -12,10 +12,10 @@ ffi:
 	$(MAKE) -C $(ASIC_RS_GO) ffi
 
 run: ## run against real miners (requires built FFI + config)
-	go run ./cmd/minerdash $(if $(CONFIG),-config $(CONFIG),)
+	go run ./cmd/hasherdash $(if $(CONFIG),-config $(CONFIG),)
 
 build:
-	go build -o bin/minerdash ./cmd/minerdash
+	go build -o bin/hasherdash ./cmd/hasherdash
 
 test:
 	go test ./internal/config ./internal/store ./internal/axetemp -count=1
@@ -25,4 +25,4 @@ tidy:
 
 # Build image from this repo only (asic-rs-go comes from the public Go module proxy).
 docker:
-	docker build -f Dockerfile -t minerdash:latest .
+	docker build -f Dockerfile -t hasherdash:latest .

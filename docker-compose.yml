@@ -1,8 +1,8 @@
 version: '3.8'
 
 services:
-  minerdash:
-    image: minerdash:latest
+  hasherdash:
+    image: hasherdash:latest
     restart: unless-stopped
     ports:
       - "8080:8080"

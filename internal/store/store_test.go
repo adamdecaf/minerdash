@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/adamdecaf/minerdash/internal/models"
+	"github.com/adamdecaf/hasherdash/internal/models"
 )
 
 func TestUpsertAndHistory(t *testing.T) {

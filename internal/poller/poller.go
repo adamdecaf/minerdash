@@ -5,8 +5,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/adamdecaf/minerdash/internal/models"
-	"github.com/adamdecaf/minerdash/internal/store"
+	"github.com/adamdecaf/hasherdash/internal/models"
+	"github.com/adamdecaf/hasherdash/internal/store"
 )
 
 // Source collects miner snapshots once.

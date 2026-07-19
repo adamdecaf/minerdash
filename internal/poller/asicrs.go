@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/adamdecaf/asic-rs-go/asicrs"
-	"github.com/adamdecaf/minerdash/internal/axetemp"
-	"github.com/adamdecaf/minerdash/internal/config"
-	"github.com/adamdecaf/minerdash/internal/models"
+	"github.com/adamdecaf/hasherdash/internal/axetemp"
+	"github.com/adamdecaf/hasherdash/internal/config"
+	"github.com/adamdecaf/hasherdash/internal/models"
 )
 
 // AsicSource discovers and polls real miners via asic-rs-go.

@@ -9,7 +9,7 @@ import (
 
 func TestLoadYAMLSubnets(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "minerdash.yaml")
+	path := filepath.Join(dir, "hasherdash.yaml")
 	content := `
 poll_interval: 15s
 subnets:
@@ -66,7 +66,7 @@ func TestLoadSingularSubnetAlias(t *testing.T) {
 
 func TestEnvOverridesFile(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "minerdash.yaml")
+	path := filepath.Join(dir, "hasherdash.yaml")
 	if err := os.WriteFile(path, []byte("subnet: 192.168.0.0/24\npoll_interval: 60s\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestMissingExplicitConfig(t *testing.T) {
 
 func TestJSONConfig(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "minerdash.json")
+	path := filepath.Join(dir, "hasherdash.json")
 	if err := os.WriteFile(path, []byte(`{"subnets":["172.16.0.0/24"]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
