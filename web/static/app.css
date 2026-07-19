@@ -471,6 +471,13 @@ body {
   padding: 0.15rem 0.3rem;
 }
 
+/* Mobile: only preset Range — hide custom From/To datetime controls. */
+@media (max-width: 720px) {
+  .chart-custom-range {
+    display: none !important;
+  }
+}
+
 .chart-wrap {
   position: relative;
   width: 100%;

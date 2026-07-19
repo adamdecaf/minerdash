@@ -273,10 +273,26 @@
     }
   }
 
+  /** Narrow viewports: hide custom From/To and only expose preset ranges. */
+  const CHART_MOBILE_MQ = window.matchMedia("(max-width: 720px)");
+  function isChartMobile() {
+    return CHART_MOBILE_MQ.matches;
+  }
+
+  /**
+   * Range used for history/chart queries.
+   * On mobile, custom from/to is hidden — treat custom as 1d without wiping storage.
+   */
+  function effectiveChartRange() {
+    if (isChartMobile() && state.chartRange === "custom") return "1d";
+    return state.chartRange;
+  }
+
   /** Resolve the active chart time window as epoch ms { since, until }. */
   function chartWindowBounds() {
     const now = Date.now();
-    if (state.chartRange === "custom") {
+    const range = effectiveChartRange();
+    if (range === "custom") {
       let since = state.chartFrom ? new Date(state.chartFrom).getTime() : NaN;
       let until = state.chartTo ? new Date(state.chartTo).getTime() : NaN;
       if (!Number.isFinite(since) && !Number.isFinite(until)) {
@@ -289,14 +305,15 @@
       }
       return { since, until };
     }
-    const span = windowMs(state.chartRange);
+    const span = windowMs(range);
     return { since: now - span, until: now };
   }
 
   /** Build since/until query params for /api/history from the current range UI. */
   function historyTimeParams() {
     const params = new URLSearchParams();
-    if (state.chartRange === "custom") {
+    const range = effectiveChartRange();
+    if (range === "custom") {
       const since = localInputToRFC3339(state.chartFrom);
       const until = localInputToRFC3339(state.chartTo);
       if (since) params.set("since", since);
@@ -306,7 +323,7 @@
         params.set("window", "1d");
       }
     } else {
-      params.set("window", state.chartRange);
+      params.set("window", range);
     }
     return params;
   }
@@ -1160,9 +1177,16 @@
   }
 
   function syncChartRangeUI() {
-    if (els.chartRange) els.chartRange.value = state.chartRange;
+    const mobile = isChartMobile();
+    if (els.chartRange) {
+      const customOpt = els.chartRange.querySelector('option[value="custom"]');
+      if (customOpt) customOpt.hidden = mobile;
+      // Select must show a visible option; keep stored custom for desktop.
+      const display = mobile && state.chartRange === "custom" ? "1d" : state.chartRange;
+      els.chartRange.value = display;
+    }
     if (els.chartCustomRange) {
-      els.chartCustomRange.hidden = state.chartRange !== "custom";
+      els.chartCustomRange.hidden = mobile || state.chartRange !== "custom";
     }
     if (els.chartFrom && state.chartFrom) els.chartFrom.value = state.chartFrom;
     if (els.chartTo && state.chartTo) els.chartTo.value = state.chartTo;
@@ -1328,26 +1352,38 @@
     if (els.chartRange) {
       syncChartRangeUI();
       els.chartRange.addEventListener("change", () => {
-        state.chartRange = els.chartRange.value;
+        let next = els.chartRange.value;
+        if (isChartMobile() && next === "custom") next = "1d";
+        state.chartRange = next;
         if (!VALID_CHART_RANGES.has(state.chartRange)) state.chartRange = "1d";
         localStorage.setItem(CHART_RANGE_LS_KEY, state.chartRange);
         if (state.chartRange === "custom") ensureCustomDefaults();
         syncChartRangeUI();
         loadHistory();
       });
+      // Re-apply mobile simplification when crossing the breakpoint.
+      const onChartMobileChange = () => {
+        syncChartRangeUI();
+        loadHistory();
+      };
+      if (typeof CHART_MOBILE_MQ.addEventListener === "function") {
+        CHART_MOBILE_MQ.addEventListener("change", onChartMobileChange);
+      } else if (typeof CHART_MOBILE_MQ.addListener === "function") {
+        CHART_MOBILE_MQ.addListener(onChartMobileChange);
+      }
     }
     if (els.chartFrom) {
       els.chartFrom.addEventListener("change", () => {
         state.chartFrom = els.chartFrom.value;
         saveChartCustom();
-        if (state.chartRange === "custom") loadHistory();
+        if (state.chartRange === "custom" && !isChartMobile()) loadHistory();
       });
     }
     if (els.chartTo) {
       els.chartTo.addEventListener("change", () => {
         state.chartTo = els.chartTo.value;
         saveChartCustom();
-        if (state.chartRange === "custom") loadHistory();
+        if (state.chartRange === "custom" && !isChartMobile()) loadHistory();
       });
     }
 
