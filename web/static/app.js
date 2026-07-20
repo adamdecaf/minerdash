@@ -1000,6 +1000,69 @@
     return COLORS[i % COLORS.length];
   }
 
+  /**
+   * Max gap between samples before we treat the hole as missing data
+   * (e.g. power outage). Derived from poll interval with jitter headroom.
+   */
+  function chartGapThresholdMs() {
+    const pollSec = (state.meta && state.meta.poll_interval_sec) || 30;
+    return Math.max(pollSec * 2.5, 90) * 1000;
+  }
+
+  /**
+   * Split a series into drawable segments. Large time holes become separate
+   * segments with zero stubs at the edges so the line drops to 0 and does not
+   * bridge the empty space.
+   */
+  function chartSegments(points, gapMs, tMax) {
+    const pts = [];
+    for (const p of points || []) {
+      const t = new Date(p.t).getTime();
+      const v = Number(p.v);
+      if (!Number.isFinite(t) || !Number.isFinite(v)) continue;
+      pts.push({ t, v });
+    }
+    pts.sort((a, b) => a.t - b.t);
+
+    const segments = [];
+    let seg = [];
+    const pushSeg = () => {
+      if (seg.length) segments.push(seg);
+      seg = [];
+    };
+
+    for (let i = 0; i < pts.length; i++) {
+      const cur = pts[i];
+      if (seg.length) {
+        const prev = seg[seg.length - 1];
+        if (cur.t - prev.t > gapMs) {
+          // Drop to zero after the last real sample, then break the path.
+          if (prev.v !== 0) {
+            seg.push({ t: prev.t, v: 0 });
+          }
+          pushSeg();
+          // Rise from zero into the next sample (separate segment).
+          if (cur.v !== 0) {
+            seg.push({ t: cur.t, v: 0 });
+          }
+        }
+      }
+      seg.push(cur);
+    }
+
+    // Ongoing outage: last sample is stale relative to the chart window end.
+    if (seg.length && Number.isFinite(tMax)) {
+      const last = seg[seg.length - 1];
+      if (tMax - last.t > gapMs) {
+        if (last.v !== 0) {
+          seg.push({ t: last.t, v: 0 });
+        }
+      }
+    }
+    pushSeg();
+    return segments;
+  }
+
   function drawChart() {
     const canvas = els.chart;
     const wrap = canvas.parentElement;
@@ -1041,21 +1104,36 @@
     const win = chartWindowBounds();
     let tMin = win.since;
     let tMax = win.until;
+    const gapMs = chartGapThresholdMs();
+    const prepared = series.map((s) => ({
+      series: s,
+      segments: chartSegments(s.points, gapMs, tMax),
+    }));
+
     let vMin = Infinity, vMax = -Infinity;
     let dataTMin = Infinity, dataTMax = -Infinity;
-    for (const s of series) {
-      for (const p of s.points) {
-        const t = new Date(p.t).getTime();
-        if (t < dataTMin) dataTMin = t;
-        if (t > dataTMax) dataTMax = t;
-        if (p.v < vMin) vMin = p.v;
-        if (p.v > vMax) vMax = p.v;
+    let hasGaps = false;
+    for (const prep of prepared) {
+      if (prep.segments.length > 1) hasGaps = true;
+      for (const seg of prep.segments) {
+        // A trailing zero stub (ongoing outage) also counts as a gap.
+        if (seg.length >= 2 && seg[seg.length - 1].v === 0 && seg[seg.length - 2].v !== 0) {
+          hasGaps = true;
+        }
+        for (const p of seg) {
+          if (p.t < dataTMin) dataTMin = p.t;
+          if (p.t > dataTMax) dataTMax = p.t;
+          if (p.v < vMin) vMin = p.v;
+          if (p.v > vMax) vMax = p.v;
+        }
       }
     }
     // If data extends outside the nominal window (clock skew), expand slightly.
     if (Number.isFinite(dataTMin) && dataTMin < tMin) tMin = dataTMin;
     if (Number.isFinite(dataTMax) && dataTMax > tMax) tMax = dataTMax;
     if (tMin === tMax) tMax = tMin + 1;
+    // Missing-data zeros should sit on the baseline.
+    if (hasGaps && vMin > 0) vMin = 0;
     if (vMin === vMax) {
       vMin = vMin - 1;
       vMax = vMax + 1;
@@ -1123,19 +1201,23 @@
     }
     ctx.globalAlpha = 1;
 
-    // lines
-    series.forEach((s, idx) => {
+    // lines — one path per contiguous segment (gaps are not bridged)
+    prepared.forEach((prep, idx) => {
+      const s = prep.series;
       const color = seriesColor(state.history.indexOf(s) >= 0 ? state.history.findIndex((x) => x.id === s.id) : idx);
       ctx.strokeStyle = color;
       ctx.lineWidth = 1.6;
-      ctx.beginPath();
-      s.points.forEach((p, i) => {
-        const x = xOf(new Date(p.t).getTime());
-        const y = yOf(p.v);
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      });
-      ctx.stroke();
+      for (const seg of prep.segments) {
+        if (!seg.length) continue;
+        ctx.beginPath();
+        seg.forEach((p, i) => {
+          const x = xOf(p.t);
+          const y = yOf(p.v);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+      }
     });
 
     renderLegend();
