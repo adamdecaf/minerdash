@@ -192,7 +192,7 @@ func TestSQLitePathOffUsesMemory(t *testing.T) {
 	}
 }
 
-func TestSQLiteRenameMetricsOnMACPromote(t *testing.T) {
+func TestSQLiteRenameMetricsOnHostnamePromote(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "metrics.db")
 	st, err := Open(Options{
@@ -211,14 +211,15 @@ func TestSQLiteRenameMetricsOnMACPromote(t *testing.T) {
 		IP: "10.0.0.3", HashrateTH: 1, UpdatedAt: now,
 	}})
 	st.Upsert(models.Detail{Snapshot: models.Snapshot{
-		IP: "10.0.0.3", MAC: "DE:AD:BE:EF:00:01", HashrateTH: 2, UpdatedAt: now.Add(time.Minute),
+		IP: "10.0.0.3", MAC: "DE:AD:BE:EF:00:01", Hostname: "nerdqaxe_44C1",
+		HashrateTH: 2, UpdatedAt: now.Add(time.Minute),
 	}})
 
 	hist := st.History("hashrate", nil, HistoryOptions{})
 	if len(hist) != 1 {
 		t.Fatalf("series count %#v", hist)
 	}
-	if hist[0].ID != "de:ad:be:ef:00:01" {
+	if hist[0].ID != "host:nerdqaxe_44c1" {
 		t.Fatalf("id %q", hist[0].ID)
 	}
 	if len(hist[0].Points) != 2 {

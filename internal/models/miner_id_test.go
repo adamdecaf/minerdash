@@ -23,14 +23,17 @@ func TestNormalizeMAC(t *testing.T) {
 }
 
 func TestStableID(t *testing.T) {
-	if got := StableID("AA:BB:CC:DD:EE:FF", "rig-a", "SN1", "10.0.0.1"); got != "aa:bb:cc:dd:ee:ff" {
-		t.Fatalf("prefer mac: %q", got)
+	if got := StableID("AA:BB:CC:DD:EE:FF", "rig-a", "SN1", "10.0.0.1"); got != "host:rig-a" {
+		t.Fatalf("prefer hostname over mac: %q", got)
 	}
-	if got := StableID("", "rig-a", "ABC123", "10.0.0.1"); got != "sn:abc123" {
-		t.Fatalf("prefer serial: %q", got)
-	}
-	if got := StableID("", "Rig-A", "", "10.0.0.1"); got != "host:rig-a" {
+	if got := StableID("AA:BB:CC:DD:EE:FF", "nerdqaxe_44C1", "", "10.0.0.99"); got != "host:nerdqaxe_44c1" {
 		t.Fatalf("prefer hostname: %q", got)
+	}
+	if got := StableID("AA:BB:CC:DD:EE:FF", "bitaxe", "", "10.0.0.1"); got != "aa:bb:cc:dd:ee:ff" {
+		t.Fatalf("generic hostname falls through to mac: %q", got)
+	}
+	if got := StableID("", "", "ABC123", "10.0.0.1"); got != "sn:abc123" {
+		t.Fatalf("prefer serial: %q", got)
 	}
 	if got := StableID("", "bitaxe", "", "10.0.0.1"); got != "10.0.0.1" {
 		t.Fatalf("generic hostname ignored: %q", got)
@@ -55,7 +58,7 @@ func TestApplyStableID(t *testing.T) {
 	if s.IP != "10.0.0.1" {
 		t.Fatalf("ip %q", s.IP)
 	}
-	if s.ID != "aa:bb:cc:dd:ee:ff" {
+	if s.ID != "host:rig" {
 		t.Fatalf("id %q", s.ID)
 	}
 }

@@ -1250,9 +1250,13 @@
       const el = document.createElement("span");
       el.className = "item" + (state.hiddenSeries.has(s.id) ? " off" : "");
       el.dataset.id = s.id;
-      const name = (s.stat || s.metric === "hashrate_by_type")
-        ? (s.label || s.id)
-        : (s.label && !looksLikeIP(s.label) && !looksLikeMAC(s.label) ? s.label : hostnameLabel(s, null));
+      let name;
+      if (s.stat || s.metric === "hashrate_by_type") {
+        name = s.label || s.id;
+      } else {
+        name = hostnameLabel(s, null) || s.label || "";
+      }
+      if (!name) return; // skip blank legend entries
       el.innerHTML = `<span class="swatch" style="background:${colorForSeries(s, i)}"></span>${esc(name)}`;
       el.addEventListener("click", () => {
         if (state.hiddenSeries.has(s.id)) state.hiddenSeries.delete(s.id);
@@ -1372,15 +1376,48 @@
       /^[0-9a-f]{12}$/i.test(String(s || "").trim());
   }
 
-  /** Chart legend label: hostname only (never IP / MAC / raw id). */
+  /** Strip host: prefix and normalize for comparison/display. */
+  function cleanHostname(h) {
+    let s = String(h || "").trim();
+    if (/^host:/i.test(s)) s = s.slice(5).trim();
+    return s;
+  }
+
+  function isBadHostLabel(host) {
+    if (!host) return true;
+    const h = host.toLowerCase();
+    if (looksLikeIP(h) || looksLikeMAC(h) || /^sn:/i.test(h)) return true;
+    // Never show the placeholder we used to emit, or generic factory names alone.
+    if (h === "miner" || h === "unknown" || h === "bitaxe" || h === "nerdaxe") return true;
+    return false;
+  }
+
+  /** Chart legend label: hostname only (never IP / MAC / raw id / "miner"). */
   function hostnameLabel(s, live) {
-    const host = String((live && live.hostname) || s.hostname || s.label || "").trim();
-    if (host && !looksLikeIP(host) && !looksLikeMAC(host)) return host;
+    const candidates = [
+      live && live.hostname,
+      s.hostname,
+      s.label,
+      s.canonicalId,
+      s.id,
+    ];
+    for (const c of candidates) {
+      const host = cleanHostname(c);
+      if (!isBadHostLabel(host)) {
+        // Prefer live hostname casing when it matches.
+        const liveHost = cleanHostname(live && live.hostname);
+        if (liveHost && liveHost.toLowerCase() === host.toLowerCase()) return liveHost;
+        if (s.hostname && cleanHostname(s.hostname).toLowerCase() === host.toLowerCase()) {
+          return cleanHostname(s.hostname);
+        }
+        return host;
+      }
+    }
     const model = String((live && live.model) || s.model || "").trim();
     if (model) return model;
     const make = String((live && live.make) || s.make || "").trim();
     if (make) return make;
-    return "miner";
+    return "";
   }
 
   /** Find live miner matching a history series id (stable id, MAC, or IP alias). */
@@ -1394,27 +1431,100 @@
     const byId = new Map();
     const byMAC = new Map();
     const byIP = new Map();
+    const byHost = new Map();
     for (const m of miners || []) {
       if (m.id) byId.set(m.id, m);
       const mac = (m.mac || "").trim().toLowerCase();
       if (mac) byMAC.set(mac, m);
       const ip = (m.ip || "").trim();
       if (ip) byIP.set(ip, m);
+      const host = cleanHostname(m.hostname).toLowerCase();
+      if (host) byHost.set(host, m);
+      // History may still be keyed as host:name from an earlier identity.
+      if (host) byId.set("host:" + host, m);
     }
     return (seriesList || []).map((s) => {
       // Type-aggregated series already have human labels (Make Model · avg).
       if (s.stat || s.metric === "hashrate_by_type") return s;
-      const live = liveForSeries(s, byId, byMAC, byIP);
+      let live = liveForSeries(s, byId, byMAC, byIP);
+      if (!live) {
+        const hostKey = cleanHostname(s.label || s.hostname || s.id).toLowerCase();
+        if (hostKey) live = byHost.get(hostKey) || null;
+      }
+      const hostname = cleanHostname((live && live.hostname) || s.hostname || s.label || "");
       return {
         ...s,
         make: (live && live.make) || s.make || "",
         model: (live && live.model) || s.model || "",
         firmware: (live && live.firmware) || s.firmware || "",
         algo: (live && live.algo) || s.algo || "",
-        hostname: (live && live.hostname) || s.hostname || "",
-        label: hostnameLabel(s, live),
+        hostname,
+        canonicalId: (live && live.id) || "",
+        label: hostnameLabel({ ...s, hostname }, live),
       };
     });
+  }
+
+  /** Merge points from duplicate identity series (same device, different history ids). */
+  function mergePoints(a, b) {
+    const map = new Map();
+    for (const p of [...(a || []), ...(b || [])]) {
+      const t = new Date(p.t).getTime();
+      const v = Number(p.v);
+      if (!Number.isFinite(t) || !Number.isFinite(v)) continue;
+      // Later sample at the exact same ms wins.
+      map.set(t, v);
+    }
+    return [...map.entries()]
+      .sort((x, y) => x[0] - y[0])
+      .map(([t, v]) => ({ t: new Date(t).toISOString(), v }));
+  }
+
+  /**
+   * One chart series per physical miner. Prefer hostname as the merge key so
+   * IP switches and old MAC-keyed history collapse to a single line.
+   */
+  function mergeSeriesByMiner(seriesList) {
+    const groups = new Map();
+    const order = [];
+    for (const s of seriesList || []) {
+      if (s.stat || s.metric === "hashrate_by_type") {
+        const k = "type:" + s.id;
+        if (!groups.has(k)) {
+          groups.set(k, s);
+          order.push(k);
+        }
+        continue;
+      }
+      const host = cleanHostname(s.hostname || s.label || s.canonicalId || s.id).toLowerCase();
+      const hostKey = host && !isBadHostLabel(host) ? "h:" + host : "";
+      // Hostname wins over canonical/MAC ids so IP+MAC churn stays one series.
+      const key = hostKey || s.canonicalId || s.id;
+      const seriesId = hostKey
+        ? ("host:" + host)
+        : (s.canonicalId || s.id);
+      const prev = groups.get(key);
+      if (!prev) {
+        const label = hostnameLabel(s, null);
+        groups.set(key, {
+          ...s,
+          id: seriesId,
+          points: [...(s.points || [])],
+          label: label || s.label || "",
+        });
+        order.push(key);
+        continue;
+      }
+      prev.points = mergePoints(prev.points, s.points);
+      if (!prev.canonicalId && s.canonicalId) prev.canonicalId = s.canonicalId;
+      if (s.hostname) prev.hostname = s.hostname;
+      if (s.make) prev.make = s.make;
+      if (s.model) prev.model = s.model;
+      prev.id = seriesId;
+      const label = hostnameLabel(prev, null);
+      if (label) prev.label = label;
+    }
+    return order.map((k) => groups.get(k)).filter((s) => s.label);
   }
 
   /**
@@ -1543,13 +1653,17 @@
     const byIP = new Map(state.miners.filter((m) => m.ip).map((m) => [m.ip, m]));
 
     let chartSeries = allSeries.filter((s) => {
+      if (s.canonicalId) return liveFilteredIds.has(s.canonicalId);
       const live = liveForSeries(s, byId, byMAC, byIP);
       if (live) return liveFilteredIds.has(live.id);
       // In-window history for miners not currently listed: keep if filters match.
       return seriesPassesFilters(s);
     });
-    // Cap individual series; type aggregation wants the full filtered set.
-    if (!byType && chartSeries.length > 40) chartSeries = chartSeries.slice(0, 40);
+    // Collapse duplicate history ids for the same device (IP + MAC, host: + MAC, …).
+    if (!byType) {
+      chartSeries = mergeSeriesByMiner(chartSeries);
+      if (chartSeries.length > 40) chartSeries = chartSeries.slice(0, 40);
+    }
 
     if (byType) {
       chartSeries = aggregateHashrateByType(chartSeries);

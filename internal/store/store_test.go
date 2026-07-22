@@ -136,17 +136,17 @@ func TestHistoryTimeFilter(t *testing.T) {
 	}
 }
 
-func TestUpsertGroupsByMACAcrossIPChange(t *testing.T) {
+func TestUpsertGroupsByHostnameAcrossIPChange(t *testing.T) {
 	st := New(20, 30)
 	now := time.Now().UTC()
-	mac := "AA:BB:CC:DD:EE:01"
 
 	st.Upsert(models.Detail{Snapshot: models.Snapshot{
-		IP: "10.0.0.10", MAC: mac, Hostname: "rig-a",
+		IP: "10.0.0.10", MAC: "AA:BB:CC:DD:EE:01", Hostname: "nerdqaxe_44C1",
 		HashrateTH: 10, UpdatedAt: now,
 	}})
+	// Same hostname, new IP (and even a different reported MAC) stays one row.
 	st.Upsert(models.Detail{Snapshot: models.Snapshot{
-		IP: "10.0.0.99", MAC: mac, Hostname: "rig-a",
+		IP: "10.0.0.99", MAC: "11:22:33:44:C1:02", Hostname: "nerdqaxe_44C1",
 		HashrateTH: 11, UpdatedAt: now.Add(time.Minute),
 	}})
 
@@ -154,7 +154,7 @@ func TestUpsertGroupsByMACAcrossIPChange(t *testing.T) {
 	if len(list) != 1 {
 		t.Fatalf("want 1 miner after IP change, got %d: %#v", len(list), list)
 	}
-	wantID := "aa:bb:cc:dd:ee:01"
+	wantID := "host:nerdqaxe_44c1"
 	if list[0].ID != wantID {
 		t.Fatalf("id %q want %q", list[0].ID, wantID)
 	}
@@ -172,7 +172,7 @@ func TestUpsertGroupsByMACAcrossIPChange(t *testing.T) {
 	if len(hist[0].Points) != 2 {
 		t.Fatalf("want continuous history, got %d points", len(hist[0].Points))
 	}
-	if hist[0].Label != "rig-a" {
+	if hist[0].Label != "nerdqaxe_44C1" {
 		t.Fatalf("label %q", hist[0].Label)
 	}
 }
@@ -215,18 +215,17 @@ func TestUpsertDoesNotCollapseGenericHostnames(t *testing.T) {
 func TestUpsertErrorMatchesByIP(t *testing.T) {
 	st := New(10, 30)
 	now := time.Now().UTC()
-	mac := "aa:bb:cc:dd:ee:02"
 	st.Upsert(models.Detail{Snapshot: models.Snapshot{
-		IP: "10.0.0.5", MAC: mac, Hostname: "rig-b",
+		IP: "10.0.0.5", MAC: "aa:bb:cc:dd:ee:02", Hostname: "rig-b",
 		HashrateTH: 3, UpdatedAt: now,
 	}})
 	st.Upsert(models.Detail{Snapshot: models.Snapshot{
 		IP: "10.0.0.5", Error: "timeout", UpdatedAt: now.Add(time.Minute),
 	}})
 
-	d, ok := st.Get(mac)
+	d, ok := st.Get("host:rig-b")
 	if !ok {
-		t.Fatal("missing miner under mac id")
+		t.Fatal("missing miner under hostname id")
 	}
 	if d.Error != "timeout" {
 		t.Fatalf("error %q", d.Error)
@@ -239,10 +238,10 @@ func TestUpsertErrorMatchesByIP(t *testing.T) {
 	}
 }
 
-func TestUpsertPromotesIPIdentityToMAC(t *testing.T) {
+func TestUpsertPromotesIPIdentityToHostname(t *testing.T) {
 	st := New(10, 30)
 	now := time.Now().UTC()
-	// First poll failed / no MAC yet — keyed by IP.
+	// First poll failed / no hostname yet — keyed by IP.
 	st.Upsert(models.Detail{Snapshot: models.Snapshot{
 		IP: "10.0.0.7", HashrateTH: 1, UpdatedAt: now,
 	}})
@@ -255,17 +254,50 @@ func TestUpsertPromotesIPIdentityToMAC(t *testing.T) {
 	}})
 
 	if _, ok := st.Get("10.0.0.7"); ok {
-		t.Fatal("ip key should be gone after mac promotion")
+		t.Fatal("ip key should be gone after hostname promotion")
 	}
-	d, ok := st.Get("11:22:33:44:55:66")
+	d, ok := st.Get("host:gamma")
 	if !ok {
-		t.Fatal("missing mac-keyed miner")
+		t.Fatal("missing hostname-keyed miner")
 	}
 	if d.HashrateTH != 2 {
 		t.Fatalf("hashrate %v", d.HashrateTH)
 	}
 	hist := st.History("hashrate", nil, HistoryOptions{})
-	if len(hist) != 1 || hist[0].ID != "11:22:33:44:55:66" || len(hist[0].Points) != 2 {
+	if len(hist) != 1 || hist[0].ID != "host:gamma" || len(hist[0].Points) != 2 {
 		t.Fatalf("history after promote %#v", hist)
+	}
+}
+
+func TestUpsertHealsOrphanMACHistoryIntoHostname(t *testing.T) {
+	st := New(20, 30)
+	now := time.Now().UTC()
+	// Older build keyed by MAC only.
+	st.Upsert(models.Detail{Snapshot: models.Snapshot{
+		IP: "10.0.0.8", MAC: "AA:BB:CC:44:C1:01", HashrateTH: 1, UpdatedAt: now,
+	}})
+	if _, ok := st.Get("aa:bb:cc:44:c1:01"); !ok {
+		t.Fatal("expected mac-keyed miner")
+	}
+	// Hostname arrives — MAC history must fold into host: id.
+	st.Upsert(models.Detail{Snapshot: models.Snapshot{
+		IP: "10.0.0.8", MAC: "AA:BB:CC:44:C1:01", Hostname: "nerdqaxe_44C1",
+		HashrateTH: 2, UpdatedAt: now.Add(time.Minute),
+	}})
+	if _, ok := st.Get("aa:bb:cc:44:c1:01"); ok {
+		t.Fatal("mac key should be gone")
+	}
+	hist := st.History("hashrate", nil, HistoryOptions{})
+	if len(hist) != 1 {
+		t.Fatalf("want 1 series after heal, got %#v", hist)
+	}
+	if hist[0].ID != "host:nerdqaxe_44c1" {
+		t.Fatalf("id %q", hist[0].ID)
+	}
+	if len(hist[0].Points) != 2 {
+		t.Fatalf("points not merged: %#v", hist[0].Points)
+	}
+	if hist[0].Label != "nerdqaxe_44C1" {
+		t.Fatalf("label %q", hist[0].Label)
 	}
 }

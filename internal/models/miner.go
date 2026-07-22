@@ -53,18 +53,20 @@ type Snapshot struct {
 // StableID picks a durable miner key so the same hardware stays one row
 // when its DHCP address changes.
 //
-// Preference: normalized MAC → serial → hostname → IP.
-// Hostname is only used when it looks device-specific (not a bare vendor
-// default like "bitaxe"), so identical factory names don't collapse the fleet.
+// Preference: distinctive hostname → MAC → serial → IP.
+// Operators set unique hostnames (e.g. nerdqaxe_44C1); those survive IP and
+// even MAC reporting quirks better than link-layer addresses alone.
+// Generic factory hostnames (e.g. "bitaxe") are skipped so defaults don't
+// collapse the fleet.
 func StableID(mac, hostname, serial, ip string) string {
+	if h := DistinctiveHostname(hostname); h != "" {
+		return "host:" + h
+	}
 	if m := NormalizeMAC(mac); m != "" {
 		return m
 	}
 	if s := strings.TrimSpace(serial); s != "" {
 		return "sn:" + strings.ToLower(s)
-	}
-	if h := DistinctiveHostname(hostname); h != "" {
-		return "host:" + h
 	}
 	return strings.TrimSpace(ip)
 }

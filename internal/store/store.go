@@ -131,7 +131,7 @@ func (s *Store) SetPolling(v bool) {
 }
 
 // Upsert replaces a miner snapshot and appends history samples on success.
-// Miners are keyed by a stable identity (MAC → serial → hostname → IP) so a
+// Miners are keyed by a stable identity (hostname → MAC → serial → IP) so a
 // device that changes address stays one row with continuous history.
 // Failed polls merge an error onto any existing snapshot without wiping
 // identity / last-good telemetry, and do not advance LastSeen.
@@ -195,6 +195,18 @@ func (s *Store) Upsert(d models.Detail) {
 		}
 	}
 
+	// Heal orphan history keys from earlier identity schemes (IP, host:…, sn:…)
+	// even when those keys are no longer in the live fleet map (e.g. after restart).
+	for _, alias := range identityAliases(d) {
+		if alias == d.ID {
+			continue
+		}
+		if _, ok := s.history[alias]; ok {
+			s.rekeyLocked(alias, d.ID)
+		}
+		rekeys = append(rekeys, [2]string{alias, d.ID})
+	}
+
 	s.miners[d.ID] = d
 
 	samples = collectSamples(d)
@@ -206,7 +218,12 @@ func (s *Store) Upsert(d models.Detail) {
 	s.mu.Unlock()
 
 	if s.db != nil {
+		seen := map[string]bool{}
 		for _, pair := range rekeys {
+			if pair[0] == pair[1] || seen[pair[0]+"\x00"+pair[1]] {
+				continue
+			}
+			seen[pair[0]+"\x00"+pair[1]] = true
 			if err := s.renameMetrics(pair[0], pair[1]); err != nil {
 				s.logf("store: rename metrics %s → %s: %v", pair[0], pair[1], err)
 			}
@@ -219,13 +236,50 @@ func (s *Store) Upsert(d models.Detail) {
 	}
 }
 
+// identityAliases lists historical miner_id values that may still hold samples
+// for this device after identity changes (IP / MAC / host: / sn:).
+func identityAliases(d models.Detail) []string {
+	var out []string
+	add := func(id string) {
+		id = strings.TrimSpace(id)
+		if id == "" || id == d.ID {
+			return
+		}
+		for _, x := range out {
+			if x == id {
+				return
+			}
+		}
+		out = append(out, id)
+	}
+	add(d.IP)
+	if h := models.DistinctiveHostname(d.Hostname); h != "" {
+		add("host:" + h)
+		add(h)
+	}
+	if m := models.NormalizeMAC(d.MAC); m != "" {
+		add(m) // older builds keyed by MAC first
+	}
+	if sn := strings.ToLower(strings.TrimSpace(d.Serial)); sn != "" {
+		add("sn:" + sn)
+	}
+	return out
+}
+
 // findMinerLocked locates an existing fleet entry for this poll.
-// Match order: exact stable id → same MAC → same serial → same IP →
-// distinctive hostname (only when the poll has no MAC/serial).
+// Match order: exact stable id → distinctive hostname → MAC → serial → IP.
 func (s *Store) findMinerLocked(d models.Detail) (id string, existing models.Detail, ok bool) {
 	if d.ID != "" {
 		if m, hit := s.miners[d.ID]; hit {
 			return d.ID, m, true
+		}
+	}
+	// Hostname first — same unit after DHCP / MAC reporting changes.
+	if host := models.DistinctiveHostname(d.Hostname); host != "" {
+		for mid, m := range s.miners {
+			if models.DistinctiveHostname(m.Hostname) == host {
+				return mid, m, true
+			}
 		}
 	}
 	mac := models.NormalizeMAC(d.MAC)
@@ -248,19 +302,6 @@ func (s *Store) findMinerLocked(d models.Detail) (id string, existing models.Det
 		for mid, m := range s.miners {
 			if m.IP == d.IP {
 				return mid, m, true
-			}
-		}
-	}
-	// Hostname is a weaker signal; only when we lack stronger hardware ids.
-	if mac == "" && serial == "" {
-		if host := models.DistinctiveHostname(d.Hostname); host != "" {
-			for mid, m := range s.miners {
-				if models.NormalizeMAC(m.MAC) != "" || strings.TrimSpace(m.Serial) != "" {
-					continue
-				}
-				if models.DistinctiveHostname(m.Hostname) == host {
-					return mid, m, true
-				}
 			}
 		}
 	}
