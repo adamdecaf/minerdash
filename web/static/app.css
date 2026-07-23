@@ -615,11 +615,11 @@ table.compact td.vr-temp {
   position: relative;
 }
 
+/* Fixed so ancestors with overflow:hidden (table-panel, col-right) cannot
+   clip the list when the fleet table is short. top/right/max-height set in JS. */
 .columns-panel {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 0.35rem);
-  z-index: 30;
+  position: fixed;
+  z-index: 40;
   width: min(18rem, 80vw);
   max-height: min(28rem, 70vh);
   overflow: auto;

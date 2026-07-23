@@ -851,10 +851,42 @@
     els.columnsList.replaceChildren(frag);
   }
 
+  function positionColumnsPanel() {
+    if (!els.columnsPanel || !els.btnColumns || els.columnsPanel.hidden) return;
+    const panel = els.columnsPanel;
+    const rect = els.btnColumns.getBoundingClientRect();
+    const gap = 6;
+    const pad = 8;
+    const preferH = Math.min(28 * 16, window.innerHeight * 0.7);
+    const spaceBelow = window.innerHeight - rect.bottom - gap - pad;
+    const spaceAbove = rect.top - gap - pad;
+    const openUp = spaceBelow < 160 && spaceAbove > spaceBelow;
+    const maxH = Math.max(120, Math.min(preferH, openUp ? spaceAbove : spaceBelow));
+
+    panel.style.maxHeight = `${maxH}px`;
+    panel.style.left = "auto";
+    // Prefer right-align to the button; nudge left if it would overflow the viewport.
+    const width = Math.min(18 * 16, window.innerWidth * 0.8);
+    let right = window.innerWidth - rect.right;
+    if (rect.right - width < pad) {
+      right = Math.max(pad, window.innerWidth - width - pad);
+    }
+    panel.style.right = `${right}px`;
+
+    if (openUp) {
+      panel.style.top = "auto";
+      panel.style.bottom = `${window.innerHeight - rect.top + gap}px`;
+    } else {
+      panel.style.bottom = "auto";
+      panel.style.top = `${rect.bottom + gap}px`;
+    }
+  }
+
   function setColumnsPanelOpen(open) {
     if (!els.columnsPanel || !els.btnColumns) return;
     els.columnsPanel.hidden = !open;
     els.btnColumns.setAttribute("aria-expanded", open ? "true" : "false");
+    if (open) positionColumnsPanel();
   }
 
   function renderTable() {
@@ -1866,6 +1898,9 @@
       document.addEventListener("keydown", (ev) => {
         if (ev.key === "Escape") setColumnsPanelOpen(false);
       });
+      window.addEventListener("resize", positionColumnsPanel);
+      // Reposition while open if the fleet area scrolls under a fixed panel.
+      document.addEventListener("scroll", positionColumnsPanel, true);
       if (els.btnColumnsAll) {
         els.btnColumnsAll.addEventListener("click", () => {
           setVisibleColumns(COLUMNS.map((c) => c.id));
