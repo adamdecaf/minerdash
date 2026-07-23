@@ -4,10 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>hasherdash — ASIC miner fleet dashboard</title>
-  <meta name="description" content="Read-only fleet dashboard for ASIC miners. Compact table, filters, miner detail, and live charts for wall monitors." />
+  <meta name="description" content="Read-only fleet dashboard for ASIC miners. Stable identity, SQLite history, hashrate-by-type charts, and Docker Hub images for wall monitors." />
   <meta name="color-scheme" content="dark" />
   <meta property="og:title" content="hasherdash" />
-  <meta property="og:description" content="Read-only fleet dashboard for ASIC miners." />
+  <meta property="og:description" content="Read-only ASIC fleet dashboard with stable identity, live charts, and SQLite history." />
   <meta property="og:image" content="images/hasherdash.png" />
   <meta property="og:type" content="website" />
   <link rel="stylesheet" href="styles.css" />
@@ -35,17 +35,20 @@
         <h1>Fleet dashboard for ASIC miners</h1>
         <p class="lede">
           Compact table, filters, miner detail, and live charts built for a wall monitor
-          with 20+ miners. Discover on your LAN, poll continuously, stay read-only.
+          with 20+ miners. Stable identity across DHCP, SQLite history that survives restarts,
+          discover on your LAN, stay read-only.
         </p>
         <div class="hero-actions">
           <a class="btn btn-primary" href="#quickstart">Get started</a>
           <a class="btn" href="https://github.com/adamdecaf/hasherdash">View on GitHub</a>
+          <a class="btn" href="https://github.com/adamdecaf/hasherdash/releases/tag/v1.1.0">v1.1.0</a>
         </div>
         <ul class="hero-meta">
           <li>Subnet discovery</li>
+          <li>Stable miner identity</li>
           <li>Live metrics &amp; charts</li>
           <li>SQLite history</li>
-          <li>Docker one-liner</li>
+          <li>Docker Hub images</li>
           <li>No write controls</li>
         </ul>
       </div>
@@ -61,7 +64,7 @@
             height="792"
             loading="eager"
           />
-          <figcaption>Live fleet view — filters, multi-series charts, and per-miner status at a glance.</figcaption>
+          <figcaption>Live fleet view — filters, multi-series charts (including hashrate by type), and per-miner status at a glance.</figcaption>
         </figure>
       </div>
     </section>
@@ -81,6 +84,13 @@
             </p>
           </article>
           <article class="card">
+            <h3>Stable identity</h3>
+            <p>
+              Track each box by distinctive hostname, then MAC, serial, or IP.
+              DHCP address changes keep one row and continuous chart history.
+            </p>
+          </article>
+          <article class="card">
             <h3>Filter the noise</h3>
             <p>
               Search by IP, host, model, or serial. Narrow by brand, firmware, algo, status,
@@ -90,21 +100,23 @@
           <article class="card">
             <h3>Live charts</h3>
             <p>
-              Canvas charts for hashrate, temp, ASIC/VR temp, wattage, efficiency, and chips —
-              with window presets from 4h to 7d.
+              Per-miner hashrate, temps, wattage, efficiency, and chips — plus
+              <strong>hashrate by type</strong> (avg/min/max). Gaps break lines instead of
+              bridging outages. Windows from 4h to 7d.
             </p>
           </article>
           <article class="card">
             <h3>SQLite history</h3>
             <p>
               Metric samples land in a local SQLite file so charts survive restarts.
-              Retention is configurable (default 7 days).
+              Departed miners stay on charts until retention ages them out (default 7 days).
             </p>
           </article>
           <article class="card">
             <h3>Miner detail</h3>
             <p>
               Select a row for boards, fans, and pools without leaving the dashboard.
+              Chart legends prefer hostname labels over raw IDs.
             </p>
           </article>
           <article class="card">
@@ -116,7 +128,7 @@
           <article class="card">
             <h3>Simple deploy</h3>
             <p>
-              Single Docker image with asic-rs FFI baked in, or run locally with a sibling FFI build.
+              Pull <code>adamdecaf/hasherdash</code> from Docker Hub (or build locally).
               Compose bind-mounts <code>./data</code> so the metrics DB is at <code>./data/hasherdash.db</code>.
             </p>
           </article>
@@ -127,7 +139,11 @@
     <section id="quickstart" class="quickstart">
       <div class="wrap">
         <h2>Quick start</h2>
-        <p class="section-lede">Docker is the fastest path. Host networking lets the container scan your LAN.</p>
+        <p class="section-lede">
+          Docker is the fastest path. Published images:
+          <a href="https://hub.docker.com/r/adamdecaf/hasherdash">adamdecaf/hasherdash</a>
+          (tag <code>v1.1.0</code> or <code>latest</code>). Host networking lets the container scan your LAN.
+        </p>
 
         <div class="steps">
           <div class="step">
@@ -135,19 +151,22 @@
             <div>
               <h3>Start with Compose</h3>
               <pre><code>mkdir -p data
-docker compose up -d --build</code></pre>
+# optional: MINER_SUBNET=192.168.1.0/24
+docker compose up -d
+# upgrade later: docker compose pull &amp;&amp; docker compose up -d</code></pre>
             </div>
           </div>
           <div class="step">
             <span class="step-num">2</span>
             <div>
-              <h3>Or plain Docker</h3>
-              <pre><code>make docker && mkdir -p data
+              <h3>Or pull and run</h3>
+              <pre><code>mkdir -p data
+docker pull adamdecaf/hasherdash:v1.1.0
 docker run --rm --network host \
   -e MINER_SUBNET=192.168.1.0/24 \
   -e SQLITE_PATH=/app/data/hasherdash.db \
   -v "$PWD/data:/app/data" \
-  hasherdash:latest</code></pre>
+  adamdecaf/hasherdash:v1.1.0</code></pre>
             </div>
           </div>
           <div class="step">
@@ -172,12 +191,20 @@ docker run --rm --network host \
   -v "$PWD/data:/app/data" \
   -e CONFIG_FILE=/app/hasherdash.yaml \
   -e SQLITE_PATH=/app/data/hasherdash.db \
-  hasherdash:latest</code></pre>
+  adamdecaf/hasherdash:v1.1.0</code></pre>
+        </details>
+
+        <details class="more">
+          <summary>Build from this checkout</summary>
+          <pre><code>mkdir -p data
+docker compose up -d --build
+# or: make docker &amp;&amp; docker run … hasherdash:latest</code></pre>
         </details>
 
         <p class="docs-link">
           SQLite is bind-mounted at <code>./data/hasherdash.db</code> on the host
-          (<code>/app/data/hasherdash.db</code> in the container). Full config, API, and local setup are in the
+          (<code>/app/data/hasherdash.db</code> in the container). Full config, API, stable identity,
+          and chart metrics are in the
           <a href="https://github.com/adamdecaf/hasherdash#readme">README</a>.
         </p>
       </div>

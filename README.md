@@ -6,25 +6,33 @@ Compact table, filters, miner detail, and live charts for a wall monitor (20+ mi
 
 ![hasherdash dashboard](docs/images/hasherdash.png)
 
+**Highlights**
+
+- **Stable miner identity** — hostname (preferred) → MAC → serial → IP, so DHCP churn doesn’t split rows or chart history
+- **Charts** — per-miner series plus **hashrate by type** (avg/min/max); gaps break lines instead of bridging outages
+- **SQLite history** — samples survive restarts; departed miners stay on charts until retention ages them out
+- **Docker Hub** — `adamdecaf/hasherdash:<version>` and `:latest` on every `v*` tag
+
 ## Quick start (Docker)
 
 The image builds `asic-rs-go` from the public Go module proxy — no separate checkout.
 
-Published images: **[adamdecaf/hasherdash](https://hub.docker.com/r/adamdecaf/hasherdash)** (pushed on git tags `v*`).
+Published images: **[adamdecaf/hasherdash](https://hub.docker.com/r/adamdecaf/hasherdash)** (pushed on git tags `v*`). Latest release: **[v1.1.0](https://github.com/adamdecaf/hasherdash/releases/tag/v1.1.0)**.
 
 **Pull a release (no local build):**
 
 ```bash
 mkdir -p data
-docker pull adamdecaf/hasherdash:latest
+docker pull adamdecaf/hasherdash:v1.1.0
+# or: docker pull adamdecaf/hasherdash:latest
 docker run --rm --network host \
   -e MINER_SUBNET=192.168.1.0/24 \
   -e SQLITE_PATH=/app/data/hasherdash.db \
   -v "$PWD/data:/app/data" \
-  adamdecaf/hasherdash:latest
+  adamdecaf/hasherdash:v1.1.0
 ```
 
-**Docker Compose (recommended — pulls `:latest` from Hub):**
+**Docker Compose (recommended — uses Hub image, no auto-pull on every up):**
 
 ```bash
 mkdir -p data
@@ -75,7 +83,20 @@ docker run --rm --network host \
 
 Subnets are re-scanned every `rescan_interval` (default 30m). Discovered miners stay in the fleet until `miner_ttl` (default 7d) after last successful poll, and are re-polled every `poll_interval` (default 30s).
 
-Miners are tracked by a **stable identity** so DHCP IP changes don’t split one box into two rows or break chart history: distinctive **hostname** (preferred, e.g. `nerdqaxe_44C1`), then **MAC**, then **serial**, then IP. Generic factory hostnames like `bitaxe` are ignored for identity.
+### Stable identity & charts
+
+Miners are tracked by a **stable identity** so DHCP IP changes don’t split one box into two rows or break chart history:
+
+1. Distinctive **hostname** (preferred, e.g. `nerdqaxe_44C1`)
+2. **MAC**
+3. **Serial**
+4. **IP** (last resort)
+
+Generic factory hostnames like `bitaxe` / `nerdaxe` are ignored for identity so identical defaults don’t collapse separate units. Chart legends prefer hostname labels. When a miner drops off the live fleet (TTL prune), its metric samples stay in SQLite until `history_retention` ages them out, so charts keep the series.
+
+The metrics chart supports per-miner lines and a **Hashrate by type** view that aggregates avg / min / max per make+model. Large gaps in samples break the line (and drop toward zero) instead of drawing a misleading bridge across missing data.
+
+UI refresh interval is separate from backend poll (top-right control, `localStorage`). Chart range defaults to **1d** with options for 4h / 12h / 1d / 3d / 7d / custom. **Refresh** and **Rescan** kick the backend immediately (no separate “Now” control).
 
 ## Local run (no Docker)
 
@@ -160,20 +181,20 @@ Full template: `hasherdash.example.yaml`.
 | `SCAN_TIMEOUT_SEC` | `8` | Per-miner identify timeout |
 | `SCAN_CONCURRENT` | `200` | Discovery concurrency |
 
-UI refresh interval is separate (top-right control, `localStorage`). Chart range defaults to **1d** with options for 4h / 12h / 1d / 3d / 7d / custom.
-
 ## API
 
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/health` | Liveness |
 | GET | `/api/meta` | Fleet status + filter facets |
-| GET | `/api/miners` | Compact snapshots |
-| GET | `/api/miners/{ip}` | Detail (boards, fans, pools) |
+| GET | `/api/miners` | Compact snapshots (keyed by stable `id`) |
+| GET | `/api/miners/{id}` | Detail (boards, fans, pools); `{id}` is stable identity, not always IP |
 | GET | `/api/history?metric=hashrate&ids=a,b&window=1d` | Time series (`window`, or `since`/`until` RFC3339) |
 | POST | `/api/rescan` | Kick a full subnet/range discovery + poll now |
 
-Metrics: `hashrate`, `temp`, `asic_temp`, `vr_temp`, `wattage`, `efficiency`, `chips`.
+Stored metrics: `hashrate`, `temp`, `asic_temp`, `asic_temp_min`, `vr_temp`, `vr_temp_min`, `wattage`, `efficiency`, `chips`.
+
+The UI also offers **`hashrate_by_type`** (client-side avg/min/max aggregation over per-miner hashrate).
 
 ## Project layout
 
@@ -192,9 +213,8 @@ Dockerfile         multi-stage (module proxy + Rust FFI + cgo)
 - Metric history uses pure-Go SQLite ([modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite)); no extra system library.
 - Docker builds pull `github.com/adamdecaf/asic-rs-go` and compile the FFI inside the image.
 - CI builds the binary and Docker image on every push/PR.
-- Release tags `v*` publish two Hub tags: `adamdecaf/hasherdash:<version>` (e.g. `1.0.0` from `v1.0.0`) and `adamdecaf/hasherdash:latest`. Compose always pulls `:latest`.
+- Release tags `v*` publish two Hub tags: `adamdecaf/hasherdash:<version>` (e.g. `1.1.0` from `v1.1.0`) and `adamdecaf/hasherdash:latest`. Compose uses the Hub image; run `docker compose pull` to upgrade.
 - Local publish: `make docker-push` (after `docker login`; override with `DOCKER_IMAGE=` / `VERSION=`).
 - GitHub Actions secrets for Hub publish: `DOCKER_USERNAME`, `DOCKER_PASSWORD` (Hub password or access token with write access).
-
 
 
